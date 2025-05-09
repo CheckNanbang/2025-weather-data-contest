@@ -4,6 +4,7 @@ import pandas as pd
 from tqdm import trange
 from datetime import datetime
 import os
+import json
 
 from logger import get_logger
 from data.data_loader import XGBoostDataLoader, RFDataLoader
@@ -45,11 +46,8 @@ def save_metrics_csv(model_name, metrics_dict):
     return csv_path
 
 def save_metrics_cumulative(model_name, metrics):
-    # 누적 저장할 CSV 경로
     csv_path = 'results/metrics_cumulative.csv'
-    # 현재 날짜/시간
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    # 저장할 데이터프레임 한 행 생성
     new_data = pd.DataFrame([{
         'Model': model_name,
         'DateTime': now,
@@ -58,10 +56,8 @@ def save_metrics_cumulative(model_name, metrics):
         'RMSE': metrics['RMSE'],
         'R2': metrics['R2']
     }])
-    # results 폴더 없으면 생성
     if not os.path.exists('results'):
         os.makedirs('results')
-    # 파일이 있으면 append, 없으면 새로 생성
     if os.path.exists(csv_path):
         new_data.to_csv(csv_path, mode='a', header=False, index=False, encoding='utf-8')
     else:
@@ -80,6 +76,9 @@ def train_and_evaluate(model_name, n_epochs):
         model = RFModel(params)
     else:
         raise ValueError('지원하지 않는 모델입니다.')
+
+    # 모델 파라미터를 로그에 남김 (json 포맷)
+    logger.info(f'모델 파라미터: {json.dumps(params, ensure_ascii=False)}')
 
     X_train, X_test, y_train, y_test = data_loader.load_data()
     best_score = float('-inf')
