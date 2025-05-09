@@ -1,84 +1,109 @@
-import os
-import pandas as pd
-from tqdm import tqdm
 import argparse
 import yaml
+import pandas as pd
+from tqdm import trange
 from datetime import datetime
-from sklearn.datasets import load_diabetes
-from sklearn.model_selection import train_test_split
-from log_utils import save_log
-from models import xgboost
+import os
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model", choices=["xgboost"], required=True)
-    return parser.parse_args()
+from logger import get_logger
+from data.data_loader import XGBoostDataLoader, RFDataLoader
+from models.xgboost_model import XGBoostModel
+from models.rf_model import RFModel
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-def save_predictions_to_csv(predictions, model_name, new_data=None):
-    # 날짜 및 시간 정보 추가
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    # 예측값만 저장
-    df = pd.DataFrame({
-        'Predicted': predictions,  # 예측값만
-    })
-    
-    # 새 데이터가 제공되면, 예측값과 함께 그 데이터도 기록
-    if new_data is not None:
-        df['NewData'] = new_data  # 새로운 입력 데이터 추가 (실제값은 없지만)
+def load_params(filename):
+    with open(filename, 'r') as f:
+        return yaml.safe_load(f)
 
-    # logs 폴더에 저장
-    logs_dir = 'logs'  # logs 폴더
-    if not os.path.exists(logs_dir):
-        os.makedirs(logs_dir)  # 폴더가 없으면 생성
-    
-    # 파일 이름에 모델, 날짜, 시각 포함
-    filename = os.path.join(logs_dir, f"predictions_{model_name}_{timestamp}.csv")
-    
-    # CSV로 저장
-    df.to_csv(filename, index=False)
-    print(f"[INFO] 예측 결과 저장됨: {filename}")
+def save_params(filename, params):
+    with open(filename, 'w') as f:
+        yaml.dump(params, f)
 
+def tune_hyperparams(params, key, value, filename):
+    params[key] = value
+    save_params(filename, params)
 
-def main():
-    args = parse_args()
-    model_name = args.model
+def get_metrics(y_true, y_pred):
+    mae = mean_absolute_error(y_true, y_pred)
+    mse = mean_squared_error(y_true, y_pred)
+    rmse = mse ** 0.5
+    r2 = r2_score(y_true, y_pred)
+    return {
+        'MAE': mae,
+        'MSE': mse,
+        'RMSE': rmse,
+        'R2': r2
+    }
 
-    print(f"[INFO] 모델 선택: {model_name}")
+def save_metrics_csv(model_name, metrics_dict):
+    if not os.path.exists('results'):
+        os.makedirs('results')
+    now = datetime.now().strftime('%Y%m%d_%H%M%S')
+    csv_path = f'results/metrics_{model_name}_{now}.csv'
+    df = pd.DataFrame([metrics_dict])
+    df.to_csv(csv_path, index=False)
+    return csv_path
 
-    # 하이퍼파라미터 로드
-    print("[INFO] 하이퍼파라미터 불러오는 중...")
-    with open(f"params/{model_name}_params.yaml") as f:
-        params = yaml.safe_load(f)
+def save_metrics_cumulative(model_name, metrics):
+    # 누적 저장할 CSV 경로
+    csv_path = 'results/metrics_cumulative.csv'
+    # 현재 날짜/시간
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    # 저장할 데이터프레임 한 행 생성
+    new_data = pd.DataFrame([{
+        'Model': model_name,
+        'DateTime': now,
+        'MAE': metrics['MAE'],
+        'MSE': metrics['MSE'],
+        'RMSE': metrics['RMSE'],
+        'R2': metrics['R2']
+    }])
+    # results 폴더 없으면 생성
+    if not os.path.exists('results'):
+        os.makedirs('results')
+    # 파일이 있으면 append, 없으면 새로 생성
+    if os.path.exists(csv_path):
+        new_data.to_csv(csv_path, mode='a', header=False, index=False, encoding='utf-8')
+    else:
+        new_data.to_csv(csv_path, mode='w', header=True, index=False, encoding='utf-8')
 
-    # 데이터 로드 (과거 데이터를 사용하여 모델 학습)
-    print("[INFO] 데이터셋 로드 중...")
-    X, y = load_diabetes(return_X_y=True)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+def train_and_evaluate(model_name, n_epochs):
+    logger = get_logger(model_name)
 
-    # tqdm으로 학습 단계 진행률 표시
-    print("[INFO] 모델 학습 중...")
-    for _ in tqdm(range(1), desc="Training"):
-        model, mse = xgboost.train(X_train, y_train, X_test, y_test, params)
+    if model_name == 'xgboost':
+        data_loader = XGBoostDataLoader('data/')
+        params = load_params('params/xgboost_params.yaml')
+        model = XGBoostModel(params)
+    elif model_name == 'rf':
+        data_loader = RFDataLoader('data/')
+        params = load_params('params/rf_params.yaml')
+        model = RFModel(params)
+    else:
+        raise ValueError('지원하지 않는 모델입니다.')
 
-    print(f"[INFO] 학습 완료. MSE: {round(mse, 4)}")
+    X_train, X_test, y_train, y_test = data_loader.load_data()
+    best_score = float('-inf')
+    best_metrics = {}
 
-    # 로그 저장
-    print("[INFO] 로그 저장 중...")
-    metrics = {"mse": round(mse, 4)}
-    save_log(params=params, metrics=metrics, model_name=model_name)
+    for epoch in trange(1, n_epochs + 1, desc=f"Training {model_name}", unit="epoch"):
+        model.train(X_train, y_train)
+        y_pred = model.model.predict(X_test)
+        metrics = get_metrics(y_test, y_pred)
+        logger.info(f'Epoch {epoch}: ' + ', '.join([f'{k}={v:.4f}' for k, v in metrics.items()]))
+        if metrics['R2'] > best_score:
+            best_score = metrics['R2']
+            best_metrics = metrics
 
-    # 새로운 예측용 데이터 (미래 데이터를 사용할 때)
-    new_data = [[0.03, 0.25, -0.12, 0.02, 0.14, 0.11, -0.12, 0.04, -0.18, -0.08]]  # 예시 데이터
-    print("[INFO] 새로운 데이터 예측 중...")
+    logger.info(f'최종 평가지표 (Best R2 기준): ' + ', '.join([f'{k}={v:.4f}' for k, v in best_metrics.items()]))
+    csv_path = save_metrics_csv(model_name, best_metrics)
+    logger.info(f'최종 평가지표가 {csv_path}에 저장되었습니다.')
+    save_metrics_cumulative(model_name, best_metrics)
+    logger.info(f'누적 평가지표가 results/metrics_cumulative.csv에 저장되었습니다.')
+    logger.info(f'로그 파일: {logger.log_filename}')
 
-    # 예측
-    preds = model.predict(new_data)
-
-    # 예측 결과를 CSV 파일로 저장
-    save_predictions_to_csv(preds, model_name, new_data=new_data)
-
-    print("[INFO] 모든 작업 완료!")
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='모델 및 에포크 선택 실행')
+    parser.add_argument('--model', type=str, required=True, choices=['xgboost', 'rf'], help='실행할 모델 이름')
+    parser.add_argument('--epochs', type=int, default=5, help='학습 에포크 수 (기본값: 5)')
+    args = parser.parse_args()
+    train_and_evaluate(args.model, args.epochs)
