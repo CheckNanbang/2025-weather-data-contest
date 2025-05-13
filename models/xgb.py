@@ -1,68 +1,91 @@
-from xgboost import XGBClassifier
+# models/xgb.py
 from xgboost import XGBRegressor
+import numpy as np
 
 class XGB:
     """
-    XGBoost 모델을 다루는 클래스. 분류 또는 회귀 모델을 학습하고 예측하며, 특성 중요도를 반환.
-
+    XGBoost 회귀 모델을 다루는 클래스.
+    
     Args:
-        model_type (str): 모델 유형, "classifier" 또는 "regressor".
-        params (dict): XGBoost 모델 학습에 필요한 하이퍼파라미터.
-
-    Methods:
-        train: 학습 데이터를 사용하여 모델을 학습.
-            Args:
-                x_train (pd.DataFrame): 학습 입력 데이터.
-                y_train (pd.Series): 학습 타겟 데이터.
-                x_valid (pd.DataFrame, optional): 검증 입력 데이터.
-                y_valid (pd.Series, optional): 검증 타겟 데이터.
-            - 검증 데이터가 주어지면 이를 사용하여 모델을 학습하며, 주어지지 않으면 학습 데이터만으로 학습.
-        
-        predict_proba: 검증 데이터에 대한 클래스 확률 예측 (분류 모델에서만 사용 가능).
-            Args:
-                x_valid (pd.DataFrame): 검증 데이터.
-            Returns:
-                np.ndarray: 각 클래스에 대한 확률 예측 값.
-
-        predict: 검증 데이터에 대한 예측.
-            Args:
-                x_valid (pd.DataFrame): 검증 데이터.
-            Returns:
-                np.ndarray: 예측된 값.
-
-        feature_importance: 학습된 모델의 특성 중요도를 반환.
-            Returns:
-                np.ndarray: 각 특성에 대한 중요도 값.
+        params (dict): XGBoost 모델 학습에 필요한 하이퍼파라미터
     """
-    def __init__(self, model_type, params):
+    def __init__(self, params):
         self.model = None
-        self.model_type = model_type
         self.params = params
         
     def train(self, x_train, y_train, x_valid=None, y_valid=None):
-        if self.model_type == "classifier":
-            model = XGBClassifier(**self.params)
-        elif self.model_type == "regressor":
-            model = XGBRegressor(**self.params)
+        """
+        XGBoost 회귀 모델을 학습시킴.
+        
+        Args:
+            x_train (pd.DataFrame): 학습 입력 데이터
+            y_train (pd.Series): 학습 타겟 데이터
+            x_valid (pd.DataFrame, optional): 검증 입력 데이터
+            y_valid (pd.Series, optional): 검증 타겟 데이터
+        """
+        model = XGBRegressor(**self.params)
+        
         if x_valid is None or y_valid is None:
             model.fit(x_train, y_train)
         else:
-            model.fit(x_train, y_train, eval_set=[(x_valid, y_valid)])
+            model.fit(
+                x_train, y_train, 
+                eval_set=[(x_valid, y_valid)],
+                verbose=100
+            )
+        
         self.model = model
+        
+        # 성능 평가 (검증 데이터가 있는 경우)
+        if x_valid is not None and y_valid is not None:
+            y_pred = self.predict(x_valid)
+            from sklearn.metrics import mean_squared_error
+            rmse = np.sqrt(mean_squared_error(y_valid, y_pred))
+            print(f"검증 데이터 RMSE: {rmse:.4f}")
     
-    def predict_proba(self, x_valid):
+    def predict(self, x_data):
+        """
+        학습된 모델을 사용하여 예측 수행.
+        
+        Args:
+            x_data (pd.DataFrame): 예측할 입력 데이터
+            
+        Returns:
+            np.ndarray: 예측된 값
+            
+        Raises:
+            ValueError: 모델이 학습되지 않은 경우
+        """
         if self.model is None:
-            raise ValueError("Train first")
-        y_valid_pred = self.model.predict_proba(x_valid)
-        return y_valid_pred
-    
-    def predict(self, x_valid):
-        if self.model is None:
-            raise ValueError("Train first")
-        pred = self.model.predict(x_valid)
-        return pred
+            raise ValueError("모델이 학습되지 않았습니다. 먼저 train() 메서드를 호출하세요.")
+        
+        return self.model.predict(x_data)
     
     def feature_importance(self):
+        """
+        학습된 모델의 특성 중요도를 반환.
+        
+        Returns:
+            dict: 특성 이름과 중요도를 포함하는 딕셔너리
+            
+        Raises:
+            ValueError: 모델이 학습되지 않은 경우
+        """
         if self.model is None:
-            raise ValueError("Train first")
-        return self.model.feature_importances_
+            raise ValueError("모델이 학습되지 않았습니다. 먼저 train() 메서드를 호출하세요.")
+        
+        # 특성 이름과 중요도를 매핑
+        feature_importance = {
+            feature: importance 
+            for feature, importance in zip(
+                self.model.get_booster().feature_names,
+                self.model.feature_importances_
+            )
+        }
+        
+        # 중요도 기준으로 정렬
+        sorted_importance = dict(
+            sorted(feature_importance.items(), key=lambda item: item[1], reverse=True)
+        )
+        
+        return sorted_importance

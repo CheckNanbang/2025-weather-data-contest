@@ -1,108 +1,157 @@
-import argparse
-import yaml
-import pandas as pd
-from tqdm import trange
-from datetime import datetime
 import os
-import json
+import sys
 
-from logger import get_logger
-from data.data_loader import XGBoostDataLoader, RFDataLoader
-from models.xgboost_model import XGBoostModel
-from models.rf_model import RFModel
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import pandas as pd
+from datetime import datetime
+import optuna
 
-def load_params(filename):
-    with open(filename, 'r') as f:
-        return yaml.safe_load(f)
+# 로컬 모듈 임포트
+from dataloader.data_loader import data_loader
+from utils.data_split import data_split
+from utils.load_params import load_params
+from models.train_model import train_model
+from utils.evaluation import evaluate
+from utils.cli_utils import parse_args, parse_params
+from utils.log_utils import setup_logger, save_metrics_to_csv
+from utils.train_utils import objective, plot_results
 
-def save_params(filename, params):
-    with open(filename, 'w') as f:
-        yaml.dump(params, f)
+class Tee:
+    def __init__(self, *files):
+        self.files = files
+    def write(self, obj):
+        for f in self.files:
+            f.write(obj)
+            f.flush()
+    def flush(self):
+        for f in self.files:
+            f.flush()
 
-def tune_hyperparams(params, key, value, filename):
-    params[key] = value
-    save_params(filename, params)
+def main():
+    """
+    메인 실행 함수
+    """
+    # 명령줄 인자 파싱
+    args = parse_args()
+    now = datetime.now()
+    date_code = now.strftime("%m%d%H%M%S")
+    save_name = f"{args.model}_{args.dataset}_{args.split_type}_{date_code}.csv"
 
-def get_metrics(y_true, y_pred):
-    mae = mean_absolute_error(y_true, y_pred)
-    mse = mean_squared_error(y_true, y_pred)
-    rmse = mse ** 0.5
-    r2 = r2_score(y_true, y_pred)
-    return {
-        'MAE': mae,
-        'MSE': mse,
-        'RMSE': rmse,
-        'R2': r2
-    }
+    log_filename = f"{args.model}_{date_code}.log"
+    log_path = os.path.join("logs", log_filename)
+    os.makedirs("logs", exist_ok=True)
+    logfile = open(log_path, "a", encoding="utf-8-sig")
+    sys.stdout = Tee(sys.stdout, logfile)
+    sys.stderr = Tee(sys.stderr, logfile)
+    logger = setup_logger(log_filename)
+    logger.info(f"프로그램 시작: {args.model} 모델, {args.dataset} 데이터셋, {args.split_type} 분할 방식")
+    
+    try:
+        # 데이터 로딩
+        logger.info("데이터 로딩 중...")
+        train_df, test_df, submission_df, target_column = data_loader(args.dataset)
+        
+        # 데이터 분할
+        logger.info(f"데이터 {args.split_type} 방식으로 분할 중...")
+        x_train, x_valid, y_train, y_valid = data_split(args.split_type, train_df, target_column)
+        
+        # 테스트 데이터 준비
+        X_test = test_df.copy()
+        
+        # 불필요한 컬럼 제거
+        drop_cols = ["train_heatbranch_id"]
+        for col in drop_cols:
+            if col in x_train.columns:
+                x_train = x_train.drop(columns=[col])
+                logger.info(f"학습 데이터에서 {col} 컬럼 제거")
+            if col in x_valid.columns:
+                x_valid = x_valid.drop(columns=[col])
+                logger.info(f"검증 데이터에서 {col} 컬럼 제거")
+            if col in X_test.columns:
+                X_test = X_test.drop(columns=[col])
+                logger.info(f"테스트 데이터에서 {col} 컬럼 제거")
+        
+        # 기본 파라미터 로드
+        default_params = load_params(args.model)
+        
+        # 사용자 지정 파라미터 적용
+        user_params = parse_params(args.params)
+        params = {**default_params, **user_params}
+        
+        logger.info("🔧 최종 사용 파라미터:")
+        for k, v in params.items():
+            logger.info(f"  - {k}: {v}")
+        
+        # Optuna 하이퍼파라미터 튜닝
+        if args.tune:
+            logger.info(f"Optuna 하이퍼파라미터 튜닝 시작 (시도 횟수: {args.n_trials})")
+            study = optuna.create_study(direction="minimize")
+            study.optimize(
+                lambda trial: objective(trial, args.model, x_train, y_train, x_valid, y_valid), 
+                n_trials=args.n_trials
+            )
+            
+            logger.info("🎯 최적 파라미터:")
+            for k, v in study.best_trial.params.items():
+                logger.info(f"  - {k}: {v}")
+            
+            # 최적 파라미터 적용
+            params.update(study.best_trial.params)
+        
+        # 모델 학습
+        logger.info("🚀 모델 학습 시작...")
+        model = train_model(args.model, params, x_train, y_train, x_valid, y_valid)
+        logger.info("✅ 학습 완료!")
+        
+        # 예측 및 평가
+        y_valid_pred = model.predict(x_valid)
+        metrics = evaluate(y_valid, y_valid_pred)
+        
+        logger.info("📊 검증 성능 지표:")
+        for k, v in metrics.items():
+            if v is not None:
+                result = f"{k}: {v:.4f}"
+            else:
+                result = f"{k}: 계산 불가"
+            logger.info(result)
+        
+        save_metrics_to_csv(date_code, args.model, metrics)
+        
+        # 결과 시각화
+        if args.plot:
+            logger.info("📈 결과 시각화 중...")
+            plot_results(model, x_valid, y_valid, y_valid_pred)
+        
+        # 최종 예측 및 제출 파일 생성
+        if args.submit:
+            logger.info("📝 최종 모델 학습 및 제출 파일 생성 중...")
+            
+            # 전체 데이터로 모델 재학습
+            x_total = pd.concat([x_train, x_valid], axis=0)
+            y_total = pd.concat([y_train, y_valid], axis=0)
+            
+            logger.info(f"전체 데이터 크기: {len(x_total)} 샘플")
+            final_model = train_model(args.model, params, x_total, y_total)
+            
+            # 테스트 데이터 타겟 컬럼 제거 (있는 경우)
+            X_test = X_test.drop(columns=[target_column], errors="ignore")
+            
+            # 예측 수행
+            test_pred = final_model.predict(X_test)
+            
+            # 제출 파일 저장
+            submission_df['heat_demand'] = test_pred
+            submission_df.to_csv(save_name, index=False, encoding='utf-8-sig')
+            
+            logger.info(f"📁 제출 파일 저장 완료: {save_name}")
+        
+        logger.info("프로그램 성공적으로 완료!")
+        
+    except Exception as e:
+        logger.error(f"오류 발생: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise
 
-def save_metrics_csv(model_name, metrics_dict):
-    if not os.path.exists('results'):
-        os.makedirs('results')
-    now = datetime.now().strftime('%Y%m%d_%H%M%S')
-    csv_path = f'results/metrics_{model_name}_{now}.csv'
-    df = pd.DataFrame([metrics_dict])
-    df.to_csv(csv_path, index=False)
-    return csv_path
 
-def save_metrics_cumulative(model_name, metrics):
-    csv_path = 'results/metrics_cumulative.csv'
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    new_data = pd.DataFrame([{
-        'Model': model_name,
-        'DateTime': now,
-        'MAE': metrics['MAE'],
-        'MSE': metrics['MSE'],
-        'RMSE': metrics['RMSE'],
-        'R2': metrics['R2']
-    }])
-    if not os.path.exists('results'):
-        os.makedirs('results')
-    if os.path.exists(csv_path):
-        new_data.to_csv(csv_path, mode='a', header=False, index=False, encoding='utf-8')
-    else:
-        new_data.to_csv(csv_path, mode='w', header=True, index=False, encoding='utf-8')
-
-def train_and_evaluate(model_name, n_epochs):
-    logger = get_logger(model_name)
-
-    if model_name == 'xgboost':
-        data_loader = XGBoostDataLoader('data/')
-        params = load_params('params/xgboost_params.yaml')
-        model = XGBoostModel(params)
-    elif model_name == 'rf':
-        data_loader = RFDataLoader('data/')
-        params = load_params('params/rf_params.yaml')
-        model = RFModel(params)
-    else:
-        raise ValueError('지원하지 않는 모델입니다.')
-
-    # 모델 파라미터를 로그에 남김 (json 포맷)
-    logger.info(f'모델 파라미터: {json.dumps(params, ensure_ascii=False)}')
-
-    X_train, X_test, y_train, y_test = data_loader.load_data()
-    best_score = float('-inf')
-    best_metrics = {}
-
-    for epoch in trange(1, n_epochs + 1, desc=f"Training {model_name}", unit="epoch"):
-        model.train(X_train, y_train)
-        y_pred = model.model.predict(X_test)
-        metrics = get_metrics(y_test, y_pred)
-        logger.info(f'Epoch {epoch}: ' + ', '.join([f'{k}={v:.4f}' for k, v in metrics.items()]))
-        if metrics['R2'] > best_score:
-            best_score = metrics['R2']
-            best_metrics = metrics
-
-    logger.info(f'최종 평가지표 (Best R2 기준): ' + ', '.join([f'{k}={v:.4f}' for k, v in best_metrics.items()]))
-    csv_path = save_metrics_csv(model_name, best_metrics)
-    logger.info(f'최종 평가지표가 {csv_path}에 저장되었습니다.')
-    save_metrics_cumulative(model_name, best_metrics)
-    logger.info(f'누적 평가지표가 results/metrics_cumulative.csv에 저장되었습니다.')
-    logger.info(f'로그 파일: {logger.log_filename}')
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='모델 및 에포크 선택 실행')
-    parser.add_argument('--model', type=str, required=True, choices=['xgboost', 'rf'], help='실행할 모델 이름')
-    parser.add_argument('--epochs', type=int, default=5, help='학습 에포크 수 (기본값: 5)')
-    args = parser.parse_args()
-    train_and_evaluate(args.model, args.epochs)
+if __name__ == "__main__":
+    main()
