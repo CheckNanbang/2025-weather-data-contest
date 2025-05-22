@@ -175,7 +175,7 @@ class ModelEvaluator:
                 report_lines.append("")
         
         if global_metrics:
-            report_lines.append("## 전체(글로벌) 검증 평가지표")
+            report_lines.append("## 전체(글로벌) 검증 평가지표 (클러스터별 베스트 모델 기준)")
             for metric, value in global_metrics.items():
                 if value is not None:
                     if isinstance(value, float):

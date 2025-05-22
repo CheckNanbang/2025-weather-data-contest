@@ -89,25 +89,31 @@ class ClusterMLPipeline:
     
     def _train_clusters(self, train_df: pd.DataFrame, test_df: pd.DataFrame, selected_clusters: List[int], predict=False) -> None:
         self.logger.info(f"🎯 선택된 클러스터: {selected_clusters}")
-        
-        # 전체 valid 데이터 모으기용 리스트 ← 반드시 추가!
+
+        # 전체 valid 데이터 모으기용 리스트
         all_valid_true = []
         all_valid_pred = []
-        
+
         for cluster_id in selected_clusters:
             self.logger.info(f"{'='*20} 클러스터 {cluster_id} 처리 시작 {'='*20}")
+
+            # 클러스터별 데이터 분리
             train_cluster = train_df[train_df['cluster_id'] == cluster_id].copy()
             test_cluster = test_df[test_df['cluster_id'] == cluster_id].copy()
+
             if len(train_cluster) == 0:
                 self.logger.warning(f"클러스터 {cluster_id}에 학습 데이터가 없습니다. 건너뜁니다.")
                 continue
+
+            # 클러스터별 학습 수행
             cluster_trainer = ClusterTrainer(self.config, cluster_id, self.experiment_id)
-            result = cluster_trainer.train_and_predict(train_cluster, test_cluster)
-            
-            # predictions가 None일 수도 있으니 체크해서 저장
-            if result['predictions'] is not None:
+            result = cluster_trainer.train_and_predict(train_cluster, test_cluster, predict=predict)
+
+            # 결과 저장
+            if result.get('predictions') is not None:
                 self.cluster_results[cluster_id] = result['predictions']
             self.cluster_metrics[cluster_id] = result['metrics']
+
             self.logger.info(f"✅ 클러스터 {cluster_id} 완료")
 
             # (1) 클러스터별 베스트 모델(RMSE 기준) validation 예측값만 집계
@@ -127,17 +133,30 @@ class ClusterMLPipeline:
                     all_valid_true.append(y_valid_true)
                     all_valid_pred.append(y_valid_pred)
 
-        # (2) 전체 평가지표 계산 및 출력
+        # (2) 전체 평가지표 계산 및 로그/리포트용 저장
+        self.global_metrics = None
         if all_valid_true and all_valid_pred:
             import numpy as np
             y_true_all = np.concatenate(all_valid_true)
             y_pred_all = np.concatenate(all_valid_pred)
             evaluator = ModelEvaluator(self.config)
-            global_metrics = evaluator.evaluate(y_true_all, y_pred_all)
+            self.global_metrics = evaluator.evaluate(y_true_all, y_pred_all)
             self.logger.info("====== 전체(글로벌) 검증 평가지표 (클러스터별 베스트 모델 기준) ======")
-            for metric, value in global_metrics.items():
+            for metric, value in self.global_metrics.items():
                 if value is not None:
                     self.logger.info(f"  {metric}: {value:.4f}")
+
+    def _save_results_and_report(self) -> None:
+        """결과 저장 및 리포트 생성"""
+        self.logger.info("💾 결과 저장 및 리포트 생성 중...")
+
+        # 메트릭 저장
+        self.file_manager.save_metrics(self.cluster_metrics, self.experiment_id)
+
+        # 종합 리포트 생성 (global_metrics까지 전달)
+        evaluator = ModelEvaluator(self.config)
+        evaluator.generate_report(self.cluster_metrics, self.experiment_id, global_metrics=getattr(self, "global_metrics", None))
+
 
 
     
@@ -168,17 +187,6 @@ class ClusterMLPipeline:
         
         return submission_file
     
-    def _save_results_and_report(self) -> None:
-        """결과 저장 및 리포트 생성"""
-        self.logger.info("💾 결과 저장 및 리포트 생성 중...")
-        
-        # 메트릭 저장
-        self.file_manager.save_metrics(self.cluster_metrics, self.experiment_id)
-        
-        # 종합 리포트 생성
-        evaluator = ModelEvaluator(self.config)
-        evaluator.generate_report(self.cluster_metrics, self.experiment_id)
-
 def main():
     """메인 함수"""
     import argparse
