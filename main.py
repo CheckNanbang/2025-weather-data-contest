@@ -196,14 +196,18 @@ def main():
                        help="설정 파일 경로")
     parser.add_argument("--clusters", nargs="*", type=int, 
                        help="학습할 클러스터 ID (기본값: 모든 클러스터)")
+    parser.add_argument("--models", nargs="+", help="학습할 모델명 리스트 (예: --models LGBM XGB)")
+
     parser.add_argument("--predict", action="store_true", help="최종 예측(제출)까지 실행")
     
     args = parser.parse_args()
     
     # 파이프라인 실행
     pipeline = ClusterMLPipeline(args.config)
-    results = pipeline.run(selected_clusters=args.clusters, predict=args.predict)
-    
+    if args.models:
+        pipeline.config.training.models = args.models
+
+    results = pipeline.run(selected_clusters=args.clusters)
     print(f"\n🎉 실험 완료! ID: {results['experiment_id']}")
 
 if __name__ == "__main__":
