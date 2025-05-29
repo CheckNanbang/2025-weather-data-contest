@@ -187,6 +187,25 @@ class ClusterMLPipeline:
         
         return submission_file
     
+    def tune(self, selected_clusters: List[int] = None):
+        """클러스터별 하이퍼파라미터 튜닝만 수행"""
+        self.logger.info(f"🛠️ 튜닝 시작: {self.experiment_id}")
+        train_df, test_df, _ = self._load_data()
+        train_df, test_df = self._add_cluster_ids(train_df, test_df)
+        if selected_clusters is None:
+            selected_clusters = list(self.config.cluster.mapping.keys())
+        for cluster_id in selected_clusters:
+            self.logger.info(f"클러스터 {cluster_id} 튜닝 시작")
+            train_cluster = train_df[train_df['cluster_id'] == cluster_id].copy()
+            if len(train_cluster) == 0:
+                self.logger.warning(f"클러스터 {cluster_id}에 학습 데이터가 없습니다. 건너뜁니다.")
+                continue
+            cluster_trainer = ClusterTrainer(self.config, cluster_id, self.experiment_id)
+            best_params = cluster_trainer.tune(train_cluster)
+            self.logger.info(f"클러스터 {cluster_id} 튜닝 결과: {best_params}")
+        self.logger.info("✅ 모든 클러스터 튜닝 완료")
+
+    
 def main():
     """메인 함수"""
     import argparse
@@ -200,6 +219,8 @@ def main():
 
     parser.add_argument("--predict", action="store_true", help="최종 예측(제출)까지 실행")
     
+    parser.add_argument("--tune", action="store_true", help="하이퍼파라미터 튜닝만 실행")
+    
     args = parser.parse_args()
     
     # 파이프라인 실행
@@ -207,7 +228,10 @@ def main():
     if args.models:
         pipeline.config.training.models = args.models
 
-    results = pipeline.run(selected_clusters=args.clusters)
+    if args.tune:
+        pipeline.tune(selected_clusters=args.clusters)
+    
+    results = pipeline.run(selected_clusters=args.clusters, predict=args.predict)
     print(f"\n🎉 실험 완료! ID: {results['experiment_id']}")
 
 if __name__ == "__main__":
