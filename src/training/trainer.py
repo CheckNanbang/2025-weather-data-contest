@@ -272,3 +272,28 @@ class ClusterTrainer:
         final_predictions[self.config.data.target_column] = ensemble_pred
 
         return {'predictions': final_predictions}
+    
+    def tune(self, train_data: pd.DataFrame) -> dict:
+        """클러스터별 하이퍼파라미터 튜닝만 수행하고 결과 반환"""
+        self.logger.info(f"클러스터 {self.cluster_id}: 하이퍼파라미터 튜닝 시작")
+        processed_train = self.preprocessor.fit_transform(train_data)
+        split_data = self._split_data(processed_train)
+        best_params_dict = {}
+
+        for model_name in self.config.training.models:
+            self.logger.info(f"클러스터 {self.cluster_id}: {model_name} 튜닝 시작")
+            x_train, y_train = split_data['x_train'], split_data['y_train']
+            x_valid, y_valid = split_data['x_valid'], split_data['y_valid']
+
+            # ★ 여기서 실제 튜닝 실행!
+            best_params = self.model_factory.tune_hyperparameters(
+                model_name, x_train, y_train, x_valid, y_valid, self.cluster_id
+            )
+            if best_params is not None:
+                self.logger.info(f"{model_name} best_params: {best_params}")
+                best_params_dict[model_name] = best_params
+            else:
+                self.logger.warning(f"{model_name} 튜닝 결과를 찾을 수 없습니다.")
+        return best_params_dict
+
+
