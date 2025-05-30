@@ -3,4 +3,8 @@ __pycache__/
 results/
 *.csv
 plots/
+<<<<<<< HEAD
 .myenv/
+=======
+.myenv/
+>>>>>>> e09ab5e18a9abb55735dc5d37af80713cbd74b6b

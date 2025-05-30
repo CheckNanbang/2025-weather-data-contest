@@ -228,6 +228,7 @@ def main():
     if args.models:
         pipeline.config.training.models = args.models
 
+    results = pipeline.run(selected_clusters=args.clusters)
     if args.tune:
         pipeline.tune(selected_clusters=args.clusters)
     
