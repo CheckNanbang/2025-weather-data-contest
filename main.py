@@ -187,8 +187,6 @@ class ClusterMLPipeline:
         
         return submission_file
     
-<<<<<<< HEAD
-=======
     def tune(self, selected_clusters: List[int] = None):
         """클러스터별 하이퍼파라미터 튜닝만 수행"""
         self.logger.info(f"🛠️ 튜닝 시작: {self.experiment_id}")
@@ -208,7 +206,6 @@ class ClusterMLPipeline:
         self.logger.info("✅ 모든 클러스터 튜닝 완료")
 
     
->>>>>>> e09ab5e18a9abb55735dc5d37af80713cbd74b6b
 def main():
     """메인 함수"""
     import argparse
@@ -222,11 +219,8 @@ def main():
 
     parser.add_argument("--predict", action="store_true", help="최종 예측(제출)까지 실행")
     
-<<<<<<< HEAD
-=======
     parser.add_argument("--tune", action="store_true", help="하이퍼파라미터 튜닝만 실행")
     
->>>>>>> e09ab5e18a9abb55735dc5d37af80713cbd74b6b
     args = parser.parse_args()
     
     # 파이프라인 실행
@@ -234,14 +228,11 @@ def main():
     if args.models:
         pipeline.config.training.models = args.models
 
-<<<<<<< HEAD
     results = pipeline.run(selected_clusters=args.clusters)
-=======
     if args.tune:
         pipeline.tune(selected_clusters=args.clusters)
     
     results = pipeline.run(selected_clusters=args.clusters, predict=args.predict)
->>>>>>> e09ab5e18a9abb55735dc5d37af80713cbd74b6b
     print(f"\n🎉 실험 완료! ID: {results['experiment_id']}")
 
 if __name__ == "__main__":
