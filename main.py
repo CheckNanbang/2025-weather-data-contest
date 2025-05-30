@@ -1,157 +1,214 @@
 import os
 import sys
-
 import pandas as pd
+import numpy as np
 from datetime import datetime
-import optuna
+from pathlib import Path
+import yaml
+import logging
+from typing import Dict, List, Tuple, Any
 
 # 로컬 모듈 임포트
-from dataloader.data_loader import data_loader
-from utils.data_split import data_split
-from utils.load_params import load_params
-from models.train_model import train_model
-from utils.evaluation import evaluate
-from utils.cli_utils import parse_args, parse_params
-from utils.log_utils import setup_logger, save_metrics_to_csv
-from utils.train_utils import objective, plot_results
+from src.data.data_loader import DataLoader
+from src.data.preprocessor import DataPreprocessor
+from src.models.model_factory import ModelFactory
+from src.training.trainer import ClusterTrainer
+from src.evaluation.evaluator import ModelEvaluator
+from src.utils.logger import setup_logging
+from src.utils.config import Config
+from src.utils.file_manager import FileManager
 
-class Tee:
-    def __init__(self, *files):
-        self.files = files
-    def write(self, obj):
-        for f in self.files:
-            f.write(obj)
-            f.flush()
-    def flush(self):
-        for f in self.files:
-            f.flush()
-
-def main():
-    """
-    메인 실행 함수
-    """
-    # 명령줄 인자 파싱
-    args = parse_args()
-    now = datetime.now()
-    date_code = now.strftime("%m%d%H%M%S")
-    save_name = f"{args.model}_{args.dataset}_{args.split_type}_{date_code}.csv"
-
-    log_filename = f"{args.model}_{date_code}.log"
-    log_path = os.path.join("logs", log_filename)
-    os.makedirs("logs", exist_ok=True)
-    logfile = open(log_path, "a", encoding="utf-8-sig")
-    sys.stdout = Tee(sys.stdout, logfile)
-    sys.stderr = Tee(sys.stderr, logfile)
-    logger = setup_logger(log_filename)
-    logger.info(f"프로그램 시작: {args.model} 모델, {args.dataset} 데이터셋, {args.split_type} 분할 방식")
+class ClusterMLPipeline:
+    """클러스터별 머신러닝 파이프라인 메인 클래스"""
     
-    try:
-        # 데이터 로딩
-        logger.info("데이터 로딩 중...")
-        train_df, test_df, submission_df, target_column = data_loader(args.dataset)
+    def __init__(self, config_path: str = "config/config.yaml"):
+        self.config = Config(config_path)
+        self.logger = setup_logging(self.config)
+        self.file_manager = FileManager(self.config)
+        self.experiment_id = self._generate_experiment_id()
         
-        # 데이터 분할
-        logger.info(f"데이터 {args.split_type} 방식으로 분할 중...")
-        x_train, x_valid, y_train, y_valid = data_split(args.split_type, train_df, target_column)
+        # 결과 저장용 딕셔너리
+        self.cluster_results = {}
+        self.cluster_metrics = {}
         
-        # 테스트 데이터 준비
-        X_test = test_df.copy()
+    def _generate_experiment_id(self) -> str:
+        """실험 ID 생성"""
+        timestamp = datetime.now().strftime("%m%d_%H%M%S")
+        return f"{self.config.experiment.name}_{timestamp}"
+    
+    def run(self, selected_clusters: List[int] = None, predict: bool = False) -> Dict[str, Any]:
+        """메인 실행 함수"""
+        self.logger.info(f"🚀 실험 시작: {self.experiment_id}")
+        try:
+            train_df, test_df, submission_df = self._load_data()
+            train_df, test_df = self._add_cluster_ids(train_df, test_df)
+            if selected_clusters is None:
+                selected_clusters = list(self.config.cluster.mapping.keys())
+            self._train_clusters(train_df, test_df, selected_clusters, predict=predict)
+            submission_file = None
+            if predict:
+                submission_file = self._generate_submission(submission_df)
+            self._save_results_and_report()
+            self.logger.info("✅ 실험 완료!")
+            return {
+                'experiment_id': self.experiment_id,
+                'cluster_metrics': self.cluster_metrics,
+                'submission_file': submission_file
+            }
+        except Exception as e:
+            self.logger.error(f"❌ 실험 실패: {str(e)}", exc_info=True)
+            raise
+    
+    def _load_data(self) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """데이터 로딩"""
+        self.logger.info("📊 데이터 로딩 중...")
+        data_loader = DataLoader(self.config)
+        return data_loader.load()
+    
+    def _add_cluster_ids(self, train_df: pd.DataFrame, test_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """클러스터 ID 추가"""
+        self.logger.info("🏷️ 클러스터 ID 매핑 중...")
         
-        # 불필요한 컬럼 제거
-        drop_cols = ["train_heatbranch_id"]
-        for col in drop_cols:
-            if col in x_train.columns:
-                x_train = x_train.drop(columns=[col])
-                logger.info(f"학습 데이터에서 {col} 컬럼 제거")
-            if col in x_valid.columns:
-                x_valid = x_valid.drop(columns=[col])
-                logger.info(f"검증 데이터에서 {col} 컬럼 제거")
-            if col in X_test.columns:
-                X_test = X_test.drop(columns=[col])
-                logger.info(f"테스트 데이터에서 {col} 컬럼 제거")
+        # branch_id → cluster_id 매핑 딕셔너리 생성
+        branch_to_cluster = {}
+        for cluster_id, branches in self.config.cluster.mapping.items():
+            for branch in branches:
+                branch_to_cluster[branch] = cluster_id
         
-        # 기본 파라미터 로드
-        default_params = load_params(args.model)
+        train_df['cluster_id'] = train_df['branch_id'].map(branch_to_cluster)
+        test_df['cluster_id'] = test_df['branch_id'].map(branch_to_cluster)
         
-        # 사용자 지정 파라미터 적용
-        user_params = parse_params(args.params)
-        params = {**default_params, **user_params}
+        # 매핑되지 않은 데이터 확인
+        unmapped_train = train_df[train_df['cluster_id'].isna()]
+        unmapped_test = test_df[test_df['cluster_id'].isna()]
         
-        logger.info("🔧 최종 사용 파라미터:")
-        for k, v in params.items():
-            logger.info(f"  - {k}: {v}")
+        if len(unmapped_train) > 0 or len(unmapped_test) > 0:
+            self.logger.warning(f"매핑되지 않은 데이터: train {len(unmapped_train)}, test {len(unmapped_test)}")
         
-        # Optuna 하이퍼파라미터 튜닝
-        if args.tune:
-            logger.info(f"Optuna 하이퍼파라미터 튜닝 시작 (시도 횟수: {args.n_trials})")
-            study = optuna.create_study(direction="minimize")
-            study.optimize(
-                lambda trial: objective(trial, args.model, x_train, y_train, x_valid, y_valid), 
-                n_trials=args.n_trials
-            )
-            
-            logger.info("🎯 최적 파라미터:")
-            for k, v in study.best_trial.params.items():
-                logger.info(f"  - {k}: {v}")
-            
-            # 최적 파라미터 적용
-            params.update(study.best_trial.params)
-        
-        # 모델 학습
-        logger.info("🚀 모델 학습 시작...")
-        model = train_model(args.model, params, x_train, y_train, x_valid, y_valid)
-        logger.info("✅ 학습 완료!")
-        
-        # 예측 및 평가
-        y_valid_pred = model.predict(x_valid)
-        metrics = evaluate(y_valid, y_valid_pred)
-        
-        logger.info("📊 검증 성능 지표:")
-        for k, v in metrics.items():
-            if v is not None:
-                result = f"{k}: {v:.4f}"
-            else:
-                result = f"{k}: 계산 불가"
-            logger.info(result)
-        
-        save_metrics_to_csv(date_code, args.model, metrics)
-        
-        # 결과 시각화
-        if args.plot:
-            logger.info("📈 결과 시각화 중...")
-            plot_results(model, x_valid, y_valid, y_valid_pred)
-        
-        # 최종 예측 및 제출 파일 생성
-        if args.submit:
-            logger.info("📝 최종 모델 학습 및 제출 파일 생성 중...")
-            
-            # 전체 데이터로 모델 재학습
-            x_total = pd.concat([x_train, x_valid], axis=0)
-            y_total = pd.concat([y_train, y_valid], axis=0)
-            
-            logger.info(f"전체 데이터 크기: {len(x_total)} 샘플")
-            final_model = train_model(args.model, params, x_total, y_total)
-            
-            # 테스트 데이터 타겟 컬럼 제거 (있는 경우)
-            X_test = X_test.drop(columns=[target_column], errors="ignore")
-            
-            # 예측 수행
-            test_pred = final_model.predict(X_test)
-            
-            # 제출 파일 저장
-            submission_df['heat_demand'] = test_pred
-            submission_df.to_csv(save_name, index=False, encoding='utf-8-sig')
-            
-            logger.info(f"📁 제출 파일 저장 완료: {save_name}")
-        
-        logger.info("프로그램 성공적으로 완료!")
-        
-    except Exception as e:
-        logger.error(f"오류 발생: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
-        raise
+        return train_df, test_df
+    
+    def _train_clusters(self, train_df: pd.DataFrame, test_df: pd.DataFrame, selected_clusters: List[int], predict=False) -> None:
+        self.logger.info(f"🎯 선택된 클러스터: {selected_clusters}")
 
+        # 전체 valid 데이터 모으기용 리스트
+        all_valid_true = []
+        all_valid_pred = []
+
+        for cluster_id in selected_clusters:
+            self.logger.info(f"{'='*20} 클러스터 {cluster_id} 처리 시작 {'='*20}")
+
+            # 클러스터별 데이터 분리
+            train_cluster = train_df[train_df['cluster_id'] == cluster_id].copy()
+            test_cluster = test_df[test_df['cluster_id'] == cluster_id].copy()
+
+            if len(train_cluster) == 0:
+                self.logger.warning(f"클러스터 {cluster_id}에 학습 데이터가 없습니다. 건너뜁니다.")
+                continue
+
+            # 클러스터별 학습 수행
+            cluster_trainer = ClusterTrainer(self.config, cluster_id, self.experiment_id)
+            result = cluster_trainer.train_and_predict(train_cluster, test_cluster, predict=predict)
+
+            # 결과 저장
+            if result.get('predictions') is not None:
+                self.cluster_results[cluster_id] = result['predictions']
+            self.cluster_metrics[cluster_id] = result['metrics']
+
+            self.logger.info(f"✅ 클러스터 {cluster_id} 완료")
+
+            # (1) 클러스터별 베스트 모델(RMSE 기준) validation 예측값만 집계
+            best_model = None
+            best_rmse = float('inf')
+            best_metrics = None
+            for model_name, metrics in result['metrics'].items():
+                rmse = metrics.get("RMSE")
+                if rmse is not None and rmse < best_rmse:
+                    best_rmse = rmse
+                    best_model = model_name
+                    best_metrics = metrics
+            if best_metrics is not None:
+                y_valid_true = best_metrics.get("y_valid_true")
+                y_valid_pred = best_metrics.get("y_valid_pred")
+                if y_valid_true is not None and y_valid_pred is not None:
+                    all_valid_true.append(y_valid_true)
+                    all_valid_pred.append(y_valid_pred)
+
+        # (2) 전체 평가지표 계산 및 로그/리포트용 저장
+        self.global_metrics = None
+        if all_valid_true and all_valid_pred:
+            import numpy as np
+            y_true_all = np.concatenate(all_valid_true)
+            y_pred_all = np.concatenate(all_valid_pred)
+            evaluator = ModelEvaluator(self.config)
+            self.global_metrics = evaluator.evaluate(y_true_all, y_pred_all)
+            self.logger.info("====== 전체(글로벌) 검증 평가지표 (클러스터별 베스트 모델 기준) ======")
+            for metric, value in self.global_metrics.items():
+                if value is not None:
+                    self.logger.info(f"  {metric}: {value:.4f}")
+
+    def _save_results_and_report(self) -> None:
+        """결과 저장 및 리포트 생성"""
+        self.logger.info("💾 결과 저장 및 리포트 생성 중...")
+
+        # 메트릭 저장
+        self.file_manager.save_metrics(self.cluster_metrics, self.experiment_id)
+
+        # 종합 리포트 생성 (global_metrics까지 전달)
+        evaluator = ModelEvaluator(self.config)
+        evaluator.generate_report(self.cluster_metrics, self.experiment_id, global_metrics=getattr(self, "global_metrics", None))
+
+
+
+    
+    def _generate_submission(self, submission_df: pd.DataFrame) -> str:
+        """제출 파일 생성"""
+        if not self.cluster_results:
+            self.logger.warning("예측 결과가 없어 제출 파일을 생성할 수 없습니다.")
+            return None
+            
+        self.logger.info("📝 제출 파일 생성 중...")
+        
+        # 클러스터별 예측 결과 통합
+        all_predictions = []
+        for cluster_id, predictions in self.cluster_results.items():
+            all_predictions.append(predictions)
+        
+        final_predictions = pd.concat(all_predictions, ignore_index=True)
+        final_predictions = final_predictions.sort_values('id')
+        
+        # 제출용 데이터프레임과 병합
+        submission_df = submission_df.drop(columns=[self.config.data.target_column], errors="ignore")
+        submission_df = submission_df.merge(final_predictions[['id', self.config.data.target_column]], 
+                                          on='id', how='left')
+        
+        # 파일 저장
+        submission_file = self.file_manager.save_submission(submission_df, self.experiment_id)
+        self.logger.info(f"📁 제출 파일 저장: {submission_file}")
+        
+        return submission_file
+    
+def main():
+    """메인 함수"""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="클러스터별 ML 파이프라인")
+    parser.add_argument("--config", type=str, default="config/config.yaml", 
+                       help="설정 파일 경로")
+    parser.add_argument("--clusters", nargs="*", type=int, 
+                       help="학습할 클러스터 ID (기본값: 모든 클러스터)")
+    parser.add_argument("--models", nargs="+", help="학습할 모델명 리스트 (예: --models LGBM XGB)")
+
+    parser.add_argument("--predict", action="store_true", help="최종 예측(제출)까지 실행")
+    
+    args = parser.parse_args()
+    
+    # 파이프라인 실행
+    pipeline = ClusterMLPipeline(args.config)
+    if args.models:
+        pipeline.config.training.models = args.models
+
+    results = pipeline.run(selected_clusters=args.clusters)
+    print(f"\n🎉 실험 완료! ID: {results['experiment_id']}")
 
 if __name__ == "__main__":
     main()
