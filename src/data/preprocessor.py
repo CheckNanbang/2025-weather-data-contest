@@ -4,10 +4,13 @@ import numpy as np
 from typing import Any, Optional
 import logging
 from sklearn.preprocessing import StandardScaler, LabelEncoder
+<<<<<<< HEAD
 from sklearn.preprocessing import OneHotEncoder
 import statsmodels.api as sm
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
+=======
+>>>>>>> e09ab5e18a9abb55735dc5d37af80713cbd74b6b
 
 class DataPreprocessor:
     """데이터 전처리 클래스"""
@@ -25,6 +28,7 @@ class DataPreprocessor:
     def fit_transform(self, df: pd.DataFrame) -> pd.DataFrame:
         """학습 데이터에 대한 전처리 (fit + transform)"""
         self.logger.info("전처리 fit_transform 시작")
+<<<<<<< HEAD
         df_processed = df.iloc[:,:]
         
 
@@ -56,6 +60,25 @@ class DataPreprocessor:
         # 8. 시계열 컬럼으로 인해 생긴 null값 제거
         df_processed = df_processed.dropna()
 
+=======
+        df_processed = df.copy()
+        
+        # 1. 결측치 처리
+        df_processed = self._handle_missing_values(df_processed, is_training=True)
+        
+        # 2. 파생 변수 생성
+        # df_processed = self._create_features(df_processed)
+        
+        # 3. 범주형 변수 인코딩
+        df_processed = self._encode_categorical(df_processed, is_training=True)
+        
+        # 4. 수치형 변수 스케일링
+        # df_processed = self._scale_numerical(df_processed, is_training=True)
+        
+        # 5. 시계열 특성 추가
+        # df_processed = self._add_time_features(df_processed)
+        
+>>>>>>> e09ab5e18a9abb55735dc5d37af80713cbd74b6b
         self.is_fitted = True
         self.logger.info(f"전처리 완료: {df_processed.shape}")
         return df_processed
@@ -67,6 +90,7 @@ class DataPreprocessor:
             
         self.logger.info("전처리 transform 시작")
         df_processed = df.copy()
+<<<<<<< HEAD
     
         # 동일한 전처리 과정 (is_training=False)
         df_processed = self._basic_process(df_processed, is_training=False)
@@ -76,12 +100,22 @@ class DataPreprocessor:
         df_processed = self._encode_categorical(df_processed, is_training=False)
         df_processed = self._add_time_features(df_processed)
         df_processed = df_processed.dropna(subset=['heat_demand'])
+=======
+        
+        # 동일한 전처리 과정 (is_training=False)
+        df_processed = self._handle_missing_values(df_processed, is_training=False)
+        # df_processed = self._create_features(df_processed)
+        df_processed = self._encode_categorical(df_processed, is_training=False)
+        # df_processed = self._scale_numerical(df_processed, is_training=False)
+        # df_processed = self._add_time_features(df_processed)
+>>>>>>> e09ab5e18a9abb55735dc5d37af80713cbd74b6b
         
         self.logger.info(f"전처리 변환 완료: {df_processed.shape}")
         return df_processed
     
     def _handle_missing_values(self, df: pd.DataFrame, is_training: bool = True) -> pd.DataFrame:
         """결측치 처리"""
+<<<<<<< HEAD
         # 1. si변수
         # A/B/C/F용 패턴
         pattern_group_1 = [
@@ -270,6 +304,61 @@ class DataPreprocessor:
         df['trend'] = result.trend
         df['seasonal'] =result.seasonal
         df['residual'] = result.resid
+=======
+        # 수치형 변수: 평균/중앙값으로 대체
+        numerical_cols = df.select_dtypes(include=[np.number]).columns
+        numerical_cols = [col for col in numerical_cols if col != self.config.data.target_column]
+        
+        if is_training:
+            for col in numerical_cols:
+                if df[col].isnull().sum() > 0:
+                    fill_value = df[col].median()
+                    self.feature_stats[f'{col}_fill'] = fill_value
+                    df[col].fillna(fill_value, inplace=True)
+        else:
+            for col in numerical_cols:
+                if f'{col}_fill' in self.feature_stats:
+                    df[col].fillna(self.feature_stats[f'{col}_fill'], inplace=True)
+        
+        # 범주형 변수: 최빈값으로 대체
+        categorical_cols = df.select_dtypes(include=['object']).columns
+        
+        if is_training:
+            for col in categorical_cols:
+                if df[col].isnull().sum() > 0:
+                    fill_value = df[col].mode()[0] if len(df[col].mode()) > 0 else 'unknown'
+                    self.feature_stats[f'{col}_fill'] = fill_value
+                    df[col].fillna(fill_value, inplace=True)
+        else:
+            for col in categorical_cols:
+                if f'{col}_fill' in self.feature_stats:
+                    df[col].fillna(self.feature_stats[f'{col}_fill'], inplace=True)
+        
+        return df
+    
+    def _create_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """파생 변수 생성"""
+        # 시간 관련 파생 변수 (train_heattm 컬럼이 있다고 가정)
+        if 'train_heattm' in df.columns:
+            df['hour'] = df['train_heattm'] % 100
+            df['day'] = (df['train_heattm'] // 100) % 100
+            df['month'] = (df['train_heattm'] // 10000) % 100
+            df['year'] = df['train_heattm'] // 1000000
+            
+            # 시간대 구분
+            df['time_period'] = pd.cut(df['hour'], 
+                                     bins=[0, 6, 12, 18, 24], 
+                                     labels=['night', 'morning', 'afternoon', 'evening'])
+            
+            # 요일 추가 (간단한 예시)
+            df['weekday'] = df['day'] % 7
+            
+            # 계절 구분
+            df['season'] = df['month'].map(lambda x: 
+                'spring' if x in [3,4,5] else
+                'summer' if x in [6,7,8] else  
+                'autumn' if x in [9,10,11] else 'winter')
+>>>>>>> e09ab5e18a9abb55735dc5d37af80713cbd74b6b
         
         return df
     
@@ -295,6 +384,7 @@ class DataPreprocessor:
         return df
     
     def _scale_numerical(self, df: pd.DataFrame, is_training: bool = True) -> pd.DataFrame:
+<<<<<<< HEAD
         """수치형 변수 스케일링 (타겟 및 불필요한 컬럼 제외)"""
         # 전체 수치형 변수 추출
         numerical_cols = df.select_dtypes(include=[np.number]).columns
@@ -303,6 +393,13 @@ class DataPreprocessor:
         exclude_cols = ['id', 'cluster_id', 'heat_demand', 'log_heat_demand']
         scale_cols = [col for col in numerical_cols if col not in exclude_cols]
 
+=======
+        """수치형 변수 스케일링"""
+        numerical_cols = df.select_dtypes(include=[np.number]).columns
+        scale_cols = [col for col in numerical_cols 
+                     if col not in ['id', self.config.data.target_column, 'cluster_id']]
+        
+>>>>>>> e09ab5e18a9abb55735dc5d37af80713cbd74b6b
         if is_training:
             scaler = StandardScaler()
             df[scale_cols] = scaler.fit_transform(df[scale_cols])
@@ -311,6 +408,7 @@ class DataPreprocessor:
             if 'numerical' in self.scalers:
                 scaler = self.scalers['numerical']
                 df[scale_cols] = scaler.transform(df[scale_cols])
+<<<<<<< HEAD
         return df
 
     def _add_time_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -623,3 +721,20 @@ class DataPreprocessor:
 
         # 정리
         return df.drop(['month', 'day', 'hour'], axis=1)
+=======
+        
+        return df
+    
+    def _add_time_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """시계열 특성 추가"""
+        # 시간 기반 순환 특성 (sin, cos 변환)
+        if 'hour' in df.columns:
+            df['hour_sin'] = np.sin(2 * np.pi * df['hour'] / 24)
+            df['hour_cos'] = np.cos(2 * np.pi * df['hour'] / 24)
+        
+        if 'month' in df.columns:
+            df['month_sin'] = np.sin(2 * np.pi * df['month'] / 12)
+            df['month_cos'] = np.cos(2 * np.pi * df['month'] / 12)
+        
+        return df
+>>>>>>> e09ab5e18a9abb55735dc5d37af80713cbd74b6b
