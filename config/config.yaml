@@ -10,16 +10,10 @@ data:
   
 cluster:
   mapping:
-<<<<<<< HEAD
-    0: ['E', 'K', 'R', 'S']
-    1: ['F', 'I', 'J', 'L', 'M', 'N', 'O', 'P', 'Q']
-    2: ['A', 'B', 'C', 'D', 'G', 'H']
-=======
     0: ['E', 'F', 'I', 'J', 'K', 'N', 'O', 'Q']
     1: ['B', 'C', 'G']
     2: ['A', 'D', 'H', 'P']
     3: ['L', 'M', 'R', 'S']
->>>>>>> e09ab5e18a9abb55735dc5d37af80713cbd74b6b
 
 split:
   type: "time"  # "random" or "time"
@@ -30,11 +24,7 @@ split:
     holdout_end: 2023123123
 
 training:
-<<<<<<< HEAD
-  models: ["LGBM", "XGB"]
-=======
   models: ["XGB"]
->>>>>>> e09ab5e18a9abb55735dc5d37af80713cbd74b6b
   tune_hyperparams: true
   n_trials: 20
   early_stopping_rounds: 50
