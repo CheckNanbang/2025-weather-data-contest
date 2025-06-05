@@ -33,7 +33,10 @@ class ClusterTrainer:
         self.logger.info(f"클러스터 {self.cluster_id}: 데이터 크기 - 학습: {len(train_data)}, 테스트: {len(test_data)}")
 
         # 1. 데이터 전처리
-        processed_data = self._preprocess_data(train_data, test_data)
+        processed_data = {
+            'train': train_data,
+            'test': test_data
+        }
 
         # 2. 데이터 분할
         split_data = self._split_data(processed_data['train'])
@@ -115,21 +118,6 @@ class ClusterTrainer:
                 model
             )
             self.file_manager.save_plots(plots, self.cluster_id, self.experiment_id, model_name)
-
-    def _preprocess_data(self, train_data: pd.DataFrame, test_data: pd.DataFrame) -> Dict[str, pd.DataFrame]:
-        """데이터 전처리"""
-        self.logger.info(f"클러스터 {self.cluster_id}: 데이터 전처리 시작")
-
-        # 전처리 수행 (구체적인 구현은 preprocessor에서)
-        processed_train = self.preprocessor.fit_transform(train_data)
-        processed_test = self.preprocessor.transform(test_data)
-
-        self.logger.info(f"클러스터 {self.cluster_id}: 전처리 완료 - 학습: {processed_train.shape}, 테스트: {processed_test.shape}")
-
-        return {
-            'train': processed_train,
-            'test': processed_test
-        }
 
     def _split_data(self, train_data: pd.DataFrame) -> Dict[str, Any]:
         """데이터 분할"""
