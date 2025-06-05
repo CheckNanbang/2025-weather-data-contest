@@ -26,20 +26,17 @@ class DataPreprocessor:
         """학습 데이터에 대한 전처리 (fit + transform)"""
         self.logger.info("전처리 fit_transform 시작")
         
-<<<<<<< HEAD
         # 데이터 검증
         if df.empty:
             raise ValueError("입력 데이터프레임이 비어있습니다.")
             
         self.logger.info(f"입력 데이터 크기: {df.shape}")
         self.logger.info(f"입력 데이터 컬럼: {df.columns.tolist()}")
-=======
         if 'Prophet' in self.config.training.models:
             df = df.rename(columns={
                 self.config.data.target_column: 'y',
                 'tm': 'ds'
             })
->>>>>>> 0d6dc6a9986d1a662963879b140d49bcf2f76a0b
         
         df_processed = df.iloc[:,:]
         
@@ -305,36 +302,12 @@ class DataPreprocessor:
             .mean()
             )
 
-<<<<<<< HEAD
-        #이동평균
-        target_cols = ['wd', 'ws', 'rn_hr1', 'rn_day']
-        df = self._add_moving_averages(df, target_cols, window_size=3)
-
-        # #trend ,계절성변수     
-        df_copy = df.copy()
-        df_with_date = df_copy.assign(date=lambda x: x['tm'].dt.date)
-        daily_avg = df_with_date.groupby('date')['ta'].mean()
-
-        # STL 분해
-        if len(daily_avg) >= 14:  # 최소 2주 데이터가 있는지 확인
-            result = sm.tsa.seasonal_decompose(daily_avg, model='additive', period=365)
-            df['trend'] = result.trend
-            df['seasonal'] = result.seasonal
-            df['residual'] = result.resid
-        else:
-            print(f"경고: STL 분해를 위한 충분한 데이터가 없습니다. (필요: 14일 이상, 현재: {len(daily_avg)}일)")
-            df['trend'] = 0
-            df['seasonal'] = 0
-            df['residual'] = 0
-        
-=======
             # STL 분해
             result = sm.tsa.seasonal_decompose(daily_avg, model='additive', period=365)
             df['trend'] = result.trend
             df['seasonal'] =result.seasonal
             df['residual'] = result.resid
             
->>>>>>> 0d6dc6a9986d1a662963879b140d49bcf2f76a0b
         return df
     
     def _encode_categorical(self, df: pd.DataFrame, is_training: bool = True) -> pd.DataFrame:

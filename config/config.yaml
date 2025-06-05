@@ -24,11 +24,7 @@ split:
     holdout_end: 2023123123
 
 training:
-<<<<<<< HEAD
-  models: ["XGB"]
-=======
   models: ["Prophet"]
->>>>>>> 0d6dc6a9986d1a662963879b140d49bcf2f76a0b
   tune_hyperparams: true
   n_trials: 20
   early_stopping_rounds: 50
