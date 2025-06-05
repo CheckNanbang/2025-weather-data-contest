@@ -26,12 +26,20 @@ class DataPreprocessor:
         """학습 데이터에 대한 전처리 (fit + transform)"""
         self.logger.info("전처리 fit_transform 시작")
         
+<<<<<<< HEAD
         # 데이터 검증
         if df.empty:
             raise ValueError("입력 데이터프레임이 비어있습니다.")
             
         self.logger.info(f"입력 데이터 크기: {df.shape}")
         self.logger.info(f"입력 데이터 컬럼: {df.columns.tolist()}")
+=======
+        if 'Prophet' in self.config.training.models:
+            df = df.rename(columns={
+                self.config.data.target_column: 'y',
+                'tm': 'ds'
+            })
+>>>>>>> 0d6dc6a9986d1a662963879b140d49bcf2f76a0b
         
         df_processed = df.iloc[:,:]
         
@@ -249,38 +257,55 @@ class DataPreprocessor:
     def _create_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """파생 변수 생성"""
         # 시간 관련 파생 변수 (train_heattm 컬럼이 있다고 가정)
-
-        df['year'] = df['tm'].dt.year
-        df['month'] = df['tm'].dt.month
-        df['day'] = df['tm'].dt.day
-        df['hour'] = df['tm'].dt.hour
-
-        # 시간대 구분
-        df['time_period'] = pd.cut(df['hour'], 
-                                bins=[0, 6, 12, 18, 24], 
-                                labels=['night', 'morning', 'afternoon', 'evening'])
-            
-        # 요일 추가 (간단한 예시)
-        df['weekday'] = df['day'] % 7
-            
-        # 계절 구분
-        df['season'] = df['month'].map(lambda x: 
-            'spring' if x in [3,4,5] else
-            'summer' if x in [6,7,8] else  
-            'autumn' if x in [9,10,11] else 'winter')
         
-        #풍향그룹
-        df['wd_group'] = df['wd'].apply(self._categorize_wind_direction)
+        if 'Prophet' in self.config.training.models:
+            """Prophet 사용 시 특징 생성 생략"""
+            return df[['ds', 'y', 'branch_id']] 
+        else:
+            df['year'] = df['tm'].dt.year
+            df['month'] = df['tm'].dt.month
+            df['day'] = df['tm'].dt.day
+            df['hour'] = df['tm'].dt.hour
 
-        #풍속그룹
-        df['ws_group'] = df['ws'].apply(self._categorize_ws)
+            # 시간대 구분
+            df['time_period'] = pd.cut(df['hour'], 
+                                    bins=[0, 6, 12, 18, 24], 
+                                    labels=['night', 'morning', 'afternoon', 'evening'])
+                
+            # 요일 추가 (간단한 예시)
+            df['weekday'] = df['day'] % 7
+                
+            # 계절 구분
+            df['season'] = df['month'].map(lambda x: 
+                'spring' if x in [3,4,5] else
+                'summer' if x in [6,7,8] else  
+                'autumn' if x in [9,10,11] else 'winter')
+            
+            #풍향그룹
+            df['wd_group'] = df['wd'].apply(self._categorize_wind_direction)
 
-        #이슬점
-        df['dew_point'] = df.apply(lambda row: self._dew_point(row['ta'], row['hm']), axis=1)
-        
-        #lag 변수 추가
-        df = self._add_lag_features(df, lag=1)
+            #풍속그룹
+            df['ws_group'] = df['ws'].apply(self._categorize_ws)
 
+            #이슬점
+            df['dew_point'] = df.apply(lambda row: self._dew_point(row['ta'], row['hm']), axis=1)
+            
+            #lag 변수 추가
+            df = self._add_lag_features(df, lag=1)
+
+            #이동평균
+            target_cols = ['wd', 'ws', 'rn_hr1', 'rn_day']
+            df = self._add_moving_averages(df, target_cols, window_size=3)
+
+            #trend ,계절성변수
+            daily_avg = (
+            df.copy()
+            .assign(date=lambda x: x['tm'].dt.date)
+            .groupby('date')['heat_demand']
+            .mean()
+            )
+
+<<<<<<< HEAD
         #이동평균
         target_cols = ['wd', 'ws', 'rn_hr1', 'rn_day']
         df = self._add_moving_averages(df, target_cols, window_size=3)
@@ -302,6 +327,14 @@ class DataPreprocessor:
             df['seasonal'] = 0
             df['residual'] = 0
         
+=======
+            # STL 분해
+            result = sm.tsa.seasonal_decompose(daily_avg, model='additive', period=365)
+            df['trend'] = result.trend
+            df['seasonal'] =result.seasonal
+            df['residual'] = result.resid
+            
+>>>>>>> 0d6dc6a9986d1a662963879b140d49bcf2f76a0b
         return df
     
     def _encode_categorical(self, df: pd.DataFrame, is_training: bool = True) -> pd.DataFrame:

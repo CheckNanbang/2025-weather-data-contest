@@ -120,16 +120,33 @@ class ClusterTrainer:
         """데이터 전처리"""
         self.logger.info(f"클러스터 {self.cluster_id}: 데이터 전처리 시작")
 
-        # 전처리 수행 (구체적인 구현은 preprocessor에서)
-        processed_train = self.preprocessor.fit_transform(train_data)
-        processed_test = self.preprocessor.transform(test_data)
+        # 전처리 수행 (구체적인 구현은 preprocessor에서)        
+        if 'Prophet' in self.config.training.models:
+            """Prophet 모델 전용 전처리 분기"""
+            train_data['ds'] = pd.to_datetime(
+                train_data['tm'].astype(str), 
+                format='%Y%m%d%H',
+                errors='coerce'
+            )
+            test_data['ds'] = pd.to_datetime(
+                test_data['tm'].astype(str),
+                format='%Y%m%d%H',
+                errors='coerce'
+            )
+            return {
+                'train': train_data[['ds', 'heat_demand', 'branch_id']],
+                'test': test_data[['ds', 'branch_id']]
+            }
+        else:
+            processed_train = self.preprocessor.fit_transform(train_data)
+            processed_test = self.preprocessor.transform(test_data)
 
-        self.logger.info(f"클러스터 {self.cluster_id}: 전처리 완료 - 학습: {processed_train.shape}, 테스트: {processed_test.shape}")
+            self.logger.info(f"클러스터 {self.cluster_id}: 전처리 완료 - 학습: {processed_train.shape}, 테스트: {processed_test.shape}")
 
-        return {
-            'train': processed_train,
-            'test': processed_test
-        }
+            return {
+                'train': processed_train,
+                'test': processed_test
+            }
 
     def _split_data(self, train_data: pd.DataFrame) -> Dict[str, Any]:
         """데이터 분할"""
