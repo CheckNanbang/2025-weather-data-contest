@@ -354,6 +354,10 @@ class ClusterMLPipeline:
                 continue
             
             cluster_trainer = ClusterTrainer(self.config, cluster_id, self.experiment_id)
+            # 1. 전처리기 fit 먼저 수행 (train_cluster는 원본 데이터)
+            cluster_trainer.preprocessor.fit_transform(train_cluster)
+
+            # 2. 이후 tune에서는 transform만 하도록 변경된 tune 함수 호출
             best_params = cluster_trainer.tune(train_cluster)
             self.logger.info(f"클러스터 {cluster_id} 튜닝 결과: {best_params}")
         
