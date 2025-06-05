@@ -293,7 +293,7 @@ class DataPreprocessor:
             #이동평균
             target_cols = ['wd', 'ws', 'rn_hr1', 'rn_day']
             df = self._add_moving_averages(df, target_cols, window_size=3)
-
+            
             #trend ,계절성변수
             daily_avg = (
             df.copy()
