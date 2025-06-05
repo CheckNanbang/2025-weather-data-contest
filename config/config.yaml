@@ -16,7 +16,7 @@ cluster:
     3: ['L', 'M', 'R', 'S']
 
 split:
-  type: "time"  # "random" or "time"
+  type: "random"  # "random" or "time"
   test_size: 0.2
   random_state: 42
   time_split:
@@ -24,10 +24,15 @@ split:
     holdout_end: 2023123123
 
 training:
-  models: ["XGB"]
+  models: ["Prophet"]
   tune_hyperparams: true
   n_trials: 20
   early_stopping_rounds: 50
+  prophet_params:
+    growth: 'linear'
+    seasonality_mode: 'additive'
+    yearly_seasonality: True
+    weekly_seasonality: True
   
 logging:
   level: "INFO"

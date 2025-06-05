@@ -14,6 +14,7 @@ class DataConfig:
     dataset_name: str = "heat"
     target_column: str = "heat_demand"
     data_path: str = "data"
+    prophet_target: str = 'y'
 
 @dataclass
 class ClusterConfig:
@@ -35,6 +36,12 @@ class TrainingConfig:
     tune_hyperparams: bool = True
     n_trials: int = 20
     early_stopping_rounds: int = 50
+    prophet_params: Dict[str, Any] = field(default_factory=lambda: {
+        'growth': 'linear',
+        'seasonality_mode': 'additive',
+        'yearly_seasonality': True,
+        'weekly_seasonality': True
+    })
 
 @dataclass
 class LoggingConfig:
