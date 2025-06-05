@@ -16,7 +16,7 @@ cluster:
     3: ['L', 'M', 'R', 'S']
 
 split:
-  type: "time"  # "random" or "time"
+  type: "random"  # "random" or "time"
   test_size: 0.2
   random_state: 42
   time_split:

@@ -25,35 +25,43 @@ class DataPreprocessor:
     def fit_transform(self, df: pd.DataFrame) -> pd.DataFrame:
         """학습 데이터에 대한 전처리 (fit + transform)"""
         self.logger.info("전처리 fit_transform 시작")
-        df_processed = df.iloc[:,:]
         
-        # 0.기본전처리
-        df_processed = self._basic_process(df_processed, is_training=True)
+        df_processed = df.copy()
+        df_processed['tm_dt'] = pd.to_datetime(df_processed['tm'].astype(str), format="%Y%m%d%H")
+        df_processed['month'] = df_processed['tm_dt'].dt.month
+        branch_dummies = pd.get_dummies(df_processed['branch_id'], prefix='branch_id', drop_first=True)
+        df_processed = pd.concat([df_processed.drop('branch_id', axis=1), branch_dummies], axis=1)
+        df_processed = df_processed.drop(columns=['tm', 'tm_dt'])
+
+        # df_processed = df.iloc[:,:]
+        
+        # # 0.기본전처리
+        # df_processed = self._basic_process(df_processed, is_training=True)
         
 
-        # 1. 타겟 칼럼 null값 삭제
-        df_processed = df_processed.dropna(subset=['heat_demand'])
+        # # 1. 타겟 칼럼 null값 삭제
+        # df_processed = df_processed.dropna(subset=['heat_demand'])
 
-        # 2. 타겟 로그변환
-        df['log_heat_demand'] = np.log1p(df['heat_demand'])
+        # # 2. 타겟 로그변환
+        # df['log_heat_demand'] = np.log1p(df['heat_demand'])
         
-        # 3. 결측치 처리
-        df_processed = self._handle_missing_values(df_processed, is_training=True)
+        # # 3. 결측치 처리
+        # df_processed = self._handle_missing_values(df_processed, is_training=True)
         
-        # 4. 파생 변수 생성
-        df_processed = self._create_features(df_processed)
+        # # 4. 파생 변수 생성
+        # df_processed = self._create_features(df_processed)
     
-        # 5. 수치형 변수 스케일링
-        df_processed = self._scale_numerical(df_processed, is_training=True)
+        # # 5. 수치형 변수 스케일링
+        # df_processed = self._scale_numerical(df_processed, is_training=True)
         
-        # 6. 범주형 변수 인코딩
-        df_processed = self._encode_categorical(df_processed, is_training=True)
+        # # 6. 범주형 변수 인코딩
+        # df_processed = self._encode_categorical(df_processed, is_training=True)
                 
-        # 7. 시계열 특성 추가 cos,sin + 퓨리에 
-        df_processed = self._add_time_features(df_processed)
+        # # 7. 시계열 특성 추가 cos,sin + 퓨리에 
+        # df_processed = self._add_time_features(df_processed)
 
-        # 8. 시계열 컬럼으로 인해 생긴 null값 제거
-        df_processed = df_processed.dropna()
+        # # 8. 시계열 컬럼으로 인해 생긴 null값 제거
+        # df_processed = df_processed.dropna()
 
         self.is_fitted = True
         self.logger.info(f"전처리 완료: {df_processed.shape}")
@@ -66,15 +74,23 @@ class DataPreprocessor:
             
         self.logger.info("전처리 transform 시작")
         df_processed = df.copy()
-    
+
+        # 임시 테스트
+        print("데이터 shape:", df_processed.shape)
+        df_processed['tm_dt'] = pd.to_datetime(df_processed['tm'].astype(str), format="%Y%m%d%H")
+        df_processed['month'] = df_processed['tm_dt'].dt.month
+        branch_dummies = pd.get_dummies(df_processed['branch_id'], prefix='branch_id', drop_first=True)
+        df_processed = pd.concat([df_processed.drop('branch_id', axis=1), branch_dummies], axis=1)
+        df_processed = df_processed.drop(columns=['tm', 'tm_dt'])
+        
         # 동일한 전처리 과정 (is_training=False)
-        df_processed = self._basic_process(df_processed, is_training=False)
-        df_processed = self._handle_missing_values(df_processed, is_training=False)
-        df_processed = self._create_features(df_processed)
-        df_processed = self._scale_numerical(df_processed, is_training=False)
-        df_processed = self._encode_categorical(df_processed, is_training=False)
-        df_processed = self._add_time_features(df_processed)
-        df_processed = df_processed.dropna(subset=['heat_demand'])
+        # df_processed = self._basic_process(df_processed, is_training=False)
+        # df_processed = self._handle_missing_values(df_processed, is_training=False)
+        # df_processed = self._create_features(df_processed)
+        # df_processed = self._scale_numerical(df_processed, is_training=False)
+        # df_processed = self._encode_categorical(df_processed, is_training=False)
+        # df_processed = self._add_time_features(df_processed)
+        # df_processed = df_processed.dropna(subset=['heat_demand'])
         
         self.logger.info(f"전처리 변환 완료: {df_processed.shape}")
         return df_processed
