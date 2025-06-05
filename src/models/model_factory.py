@@ -7,6 +7,7 @@ from sklearn.metrics import mean_squared_error
 
 from .lgbm_model import LGBMModel
 from .xgb_model import XGBModel
+from .prophet_model import ProphetModel
 
 class ModelFactory:
     """모델 생성 팩토리 클래스"""
@@ -27,6 +28,9 @@ class ModelFactory:
         elif model_name == "XGB":
             model_class = XGBModel  
             default_params = self._get_xgb_default_params()
+        elif model_name == "Prophet":
+            model_class = ProphetModel
+            default_params = self._get_prophet_default_params()
         else:
             raise ValueError(f"지원하지 않는 모델: {model_name}")
         
@@ -109,6 +113,16 @@ class ModelFactory:
             'verbose': 0
         }
     
+    def _get_prophet_default_params(self) -> Dict[str, Any]:
+        """Prophet 기본 파라미터"""
+        return {
+            'growth': 'linear',
+            'seasonality_mode': 'additive',
+            'yearly_seasonality': True,
+            'weekly_seasonality': True,
+            'daily_seasonality': False
+        }
+    
     def _suggest_lgbm_params(self, trial) -> Dict[str, Any]:
         """LightGBM 파라미터 제안"""
         return {
@@ -135,4 +149,11 @@ class ModelFactory:
             'gamma': trial.suggest_float('gamma', 0, 5),
             'reg_alpha': trial.suggest_float('reg_alpha', 0, 10),
             'reg_lambda': trial.suggest_float('reg_lambda', 0, 10),
+        }
+
+    def _get_prophet_default_params(self) -> Dict[str, Any]:
+        from prophet import Prophet
+        return {
+            k: v for k, v in self.config.training.prophet_params.items()
+            if k in Prophet.__init__.__code__.co_varnames
         }
