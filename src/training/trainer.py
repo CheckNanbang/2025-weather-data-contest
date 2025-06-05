@@ -32,16 +32,28 @@ class ClusterTrainer:
         """클러스터별 전체 학습 및 예측 파이프라인"""
         self.logger.info(f"클러스터 {self.cluster_id}: 데이터 크기 - 학습: {len(train_data)}, 테스트: {len(test_data)}")
 
-        # 1. 데이터 전처리
-        processed_data = self._preprocess_data(train_data, test_data)
+        # 0. target에서 결측치 제거
+        train_data = train_data.replace(-99, np.nan)
+        test_data = test_data.replace(-99, np.nan)
+        train_data = train_data.dropna(subset=[self.config.data.target_column])
+        test_data = test_data.dropna(subset=[self.config.data.target_column])
+        
+        # 1. 데이터 분할
+        split_data = self._split_data(train_data)
+        
+        # # 2. 데이터 전처리
+        processed_data = self._preprocess_data(split_data['x_train'], split_data['x_valid'])
+        split_data['x_train'] = processed_data['train']
+        split_data['x_valid'] = processed_data['test']
 
-        # 2. 데이터 분할
-        split_data = self._split_data(processed_data['train'])
-
+        # 전처리 없이 코드 돌리려면 아래 두 줄 주석 해제
+        # split_data['x_train'].drop(columns=['tm', 'branch_id'], inplace=True)
+        # split_data['x_valid'].drop(columns=['tm', 'branch_id'], inplace=True)
+        
         # 3. 모델별 학습 및 예측
         for model_name in self.config.training.models:
             self.logger.info(f"클러스터 {self.cluster_id}: {model_name} 모델 학습 시작")
-            self._train_single_model(model_name, split_data, processed_data['test'], predict=predict)
+            self._train_single_model(model_name, split_data, test_data, predict=predict)
 
         print(f"DEBUG: self.metrics in train_and_predict (cluster {self.cluster_id}) =", self.metrics)
         
@@ -88,6 +100,10 @@ class ClusterTrainer:
 
         if predict:
             # 4. 전체 데이터로 재학습 (최종 모델)
+            
+            # TODO
+            # 전체로 전처리 하는 코드가 있어야 함!!!!!!!!!!!!!!!!!!!!!!!!!
+            
             final_model = self.model_factory.create_model(model_name, use_best_params=True)
             final_model.train(split_data['x_full'], split_data['y_full'])
 
@@ -140,13 +156,14 @@ class ClusterTrainer:
         else:
             processed_train = self.preprocessor.fit_transform(train_data)
             processed_test = self.preprocessor.transform(test_data)
-
+                      
             self.logger.info(f"클러스터 {self.cluster_id}: 전처리 완료 - 학습: {processed_train.shape}, 테스트: {processed_test.shape}")
 
             return {
                 'train': processed_train,
                 'test': processed_test
             }
+
 
     def _split_data(self, train_data: pd.DataFrame) -> Dict[str, Any]:
         """데이터 분할"""
@@ -187,77 +204,6 @@ class ClusterTrainer:
             'x_full': train_data.drop(columns=[target_col]),
             'y_full': train_data[target_col]
         }
-
-    def _train_single_model(
-    self,
-    model_name: str,
-    split_data: Dict[str, Any],
-    test_data: pd.DataFrame,
-    predict: bool = False
-    ) -> None:
-        """단일 모델 학습 및 (옵션) 예측"""
-        # 1. 모델 생성 및 하이퍼파라미터 튜닝
-        model = self.model_factory.create_model(
-            model_name,
-            cluster_id=self.cluster_id,
-            tune_hyperparams=self.config.training.tune_hyperparams
-        )
-
-        # 2. 모델 학습 (검증 데이터 포함)
-        model.train(
-            split_data['x_train'],
-            split_data['y_train'],
-            split_data['x_valid'],
-            split_data['y_valid']
-        )
-
-        # 3. 검증 성능 평가
-        y_valid_pred = model.predict(split_data['x_valid'])
-        validation_metrics = self.evaluator.evaluate(split_data['y_valid'], y_valid_pred)
-
-        self.logger.info(f"클러스터 {self.cluster_id} {model_name} 검증 성능:")
-        for metric, value in validation_metrics.items():
-            if value is not None:
-                self.logger.info(f"  {metric}: {value:.4f}")
-
-        # validation_metrics + 예측값을 한 번에 저장 (덮어쓰기 X)
-        self.metrics[model_name] = {
-            **validation_metrics,
-            "y_valid_true": split_data['y_valid'].to_numpy(),
-            "y_valid_pred": y_valid_pred
-        }
-
-
-        if predict:
-            # 4. 전체 데이터로 재학습 (최종 모델)
-            final_model = self.model_factory.create_model(model_name, use_best_params=True)
-            final_model.train(split_data['x_full'], split_data['y_full'])
-
-            # 5. 테스트 예측
-            test_features = test_data.drop(columns=[self.config.data.target_column], errors='ignore')
-            test_pred = final_model.predict(test_features)
-
-            # 예측 결과 저장
-            test_predictions = test_data[['id']].copy()
-            test_predictions[self.config.data.target_column] = test_pred
-
-            # 6. 결과 저장
-            self.models[model_name] = final_model
-            self.predictions[model_name] = test_predictions
-
-            # 7. 파일 저장
-            self.file_manager.save_model(final_model, self.cluster_id, self.experiment_id, model_name)
-            self.file_manager.save_predictions(test_predictions, self.cluster_id, self.experiment_id, model_name)
-
-        # 8. 시각화 (옵션)
-        if self.config.logging.save_plots:
-            plots = self.evaluator.create_plots(
-                split_data['y_valid'],
-                y_valid_pred,
-                model
-            )
-            self.file_manager.save_plots(plots, self.cluster_id, self.experiment_id, model_name)
-
 
     def _create_ensemble(self) -> Dict[str, Any]:
         """앙상블 모델 생성 (단순 평균)"""
@@ -312,5 +258,3 @@ class ClusterTrainer:
             else:
                 self.logger.warning(f"{model_name} 튜닝 결과를 찾을 수 없습니다.")
         return best_params_dict
-
-
