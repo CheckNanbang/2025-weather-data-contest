@@ -272,8 +272,6 @@ class ClusterTrainer:
         final_predictions[self.config.data.target_column] = ensemble_pred
 
         return {'predictions': final_predictions}
-<<<<<<< HEAD
-=======
     
     def tune(self, train_data: pd.DataFrame) -> dict:
         """클러스터별 하이퍼파라미터 튜닝만 수행하고 결과 반환"""
@@ -299,4 +297,3 @@ class ClusterTrainer:
         return best_params_dict
 
 
->>>>>>> e09ab5e18a9abb55735dc5d37af80713cbd74b6b

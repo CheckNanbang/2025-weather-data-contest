@@ -25,38 +25,54 @@ class DataPreprocessor:
     def fit_transform(self, df: pd.DataFrame) -> pd.DataFrame:
         """학습 데이터에 대한 전처리 (fit + transform)"""
         self.logger.info("전처리 fit_transform 시작")
+        
+        # 데이터 검증
+        if df.empty:
+            raise ValueError("입력 데이터프레임이 비어있습니다.")
+            
+        self.logger.info(f"입력 데이터 크기: {df.shape}")
+        self.logger.info(f"입력 데이터 컬럼: {df.columns.tolist()}")
+        
         df_processed = df.iloc[:,:]
         
         # 0.기본전처리
         df_processed = self._basic_process(df_processed, is_training=True)
+        self.logger.info(f"기본 전처리 후 데이터 크기: {df_processed.shape}")
         
-
+        # 데이터가 비어있는지 다시 확인
+        if df_processed.empty:
+            raise ValueError("기본 전처리 후 데이터가 비어있습니다.")
         # 1. 타겟 칼럼 null값 삭제
-        df_processed = df_processed.dropna(subset=['heat_demand'])
+        #df_processed = df_processed.dropna(subset=['heat_demand'])
 
         # 2. 타겟 로그변환
-        df['log_heat_demand'] = np.log1p(df['heat_demand'])
+        #df['log_heat_demand'] = np.log1p(df['heat_demand'])
         
         # 3. 결측치 처리
-        df_processed = self._handle_missing_values(df_processed, is_training=True)
+        #df_processed = self._handle_missing_values(df_processed, is_training=True)
+        #self.logger.info(f"결측치 처리 후 데이터 크기: {df_processed.shape}")
         
         # 4. 파생 변수 생성
         df_processed = self._create_features(df_processed)
+        self.logger.info(f"파생 변수 생성 후 데이터 크기: {df_processed.shape}")
     
         # 5. 수치형 변수 스케일링
         df_processed = self._scale_numerical(df_processed, is_training=True)
+        self.logger.info(f"스케일링 후 데이터 크기: {df_processed.shape}")
         
         # 6. 범주형 변수 인코딩
         df_processed = self._encode_categorical(df_processed, is_training=True)
+        self.logger.info(f"인코딩 후 데이터 크기: {df_processed.shape}")
                 
         # 7. 시계열 특성 추가 cos,sin + 퓨리에 
         df_processed = self._add_time_features(df_processed)
+        self.logger.info(f"시계열 특성 추가 후 데이터 크기: {df_processed.shape}")
 
         # 8. 시계열 컬럼으로 인해 생긴 null값 제거
         df_processed = df_processed.dropna()
+        self.logger.info(f"최종 데이터 크기: {df_processed.shape}")
 
         self.is_fitted = True
-        self.logger.info(f"전처리 완료: {df_processed.shape}")
         return df_processed
         
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -74,7 +90,7 @@ class DataPreprocessor:
         df_processed = self._scale_numerical(df_processed, is_training=False)
         df_processed = self._encode_categorical(df_processed, is_training=False)
         df_processed = self._add_time_features(df_processed)
-        df_processed = df_processed.dropna(subset=['heat_demand'])
+        #df_processed = df_processed.dropna(subset=['heat_demand'])
         
         self.logger.info(f"전처리 변환 완료: {df_processed.shape}")
         return df_processed
@@ -175,22 +191,36 @@ class DataPreprocessor:
 
         # 브랜치와 패턴 그룹 매핑
         branch_group_map = {
-            pattern_group_1: {'A', 'B', 'C', 'F'},
-            pattern_group_2: {'D', 'E', 'G', 'H', 'I', 'J', 'K', 'S'},
-            pattern_group_3: {'L', 'M', 'N'},
-            pattern_group_O: {'O'},
-            pattern_group_P: {'P'},
-            pattern_group_Q: {'Q'},
-            pattern_group_R: {'R'},
+            'A': pattern_group_1,
+            'B': pattern_group_1,
+            'C': pattern_group_1,
+            'F': pattern_group_1,
+            'D': pattern_group_2,
+            'E': pattern_group_2,
+            'G': pattern_group_2,
+            'H': pattern_group_2,
+            'I': pattern_group_2,
+            'J': pattern_group_2,
+            'K': pattern_group_2,
+            'S': pattern_group_2,
+            'L': pattern_group_3,
+            'M': pattern_group_3,
+            'N': pattern_group_3,
+            'O': pattern_group_O,
+            'P': pattern_group_P,
+            'Q': pattern_group_Q,
+            'R': pattern_group_R,
         }
 
+
         # 반복 처리
-        for pattern_group, branches in branch_group_map.items():
-            df = self._fill_si_by_pattern(df, branches, pattern_group)
+        for branches, pattern_group in branch_group_map.items():
+            df = self._fill_si_by_pattern(df, {branches}, pattern_group)
+
 
         # 2. 'ta', 'wd', 'ws', 'rn_day', 'rn_hr1', 'hm' 변수
         # 1)장시간 결측
-        vars_to_check = ['ta', 'wd', 'ws', 'rn_day', 'rn_hr1', 'hm','si']
+        vars_to_check = ['ta', 'wd', 'ws', 'rn_day', 'rn_hr1', 'hm', 'si']
 
         summaries = []
         for var in vars_to_check:
@@ -202,7 +232,7 @@ class DataPreprocessor:
         unique_summary = full_summary.drop_duplicates(subset=['branch_id', 'start_time', 'end_time'])
 
         for var in vars_to_check:
-            self._fill_long_term_missing_with_cluster_avg(self, df, summaries, var)
+            self._fill_long_term_missing_with_cluster_avg(df, unique_summary, var)
 
         # 2) 단시간 결측
 
@@ -210,7 +240,7 @@ class DataPreprocessor:
         vars_to_impute = ['ta', 'wd', 'ws', 'rn_day', 'rn_hr1', 'hm', 'ta_chi','si']
 
         # 각각 "클러스터별로" MICE 적용
-        df = self._apply_mice(df, vars_to_impute)
+        #df = self._apply_mice(df, vars_to_impute)
 
         return df
     
@@ -255,19 +285,22 @@ class DataPreprocessor:
         target_cols = ['wd', 'ws', 'rn_hr1', 'rn_day']
         df = self._add_moving_averages(df, target_cols, window_size=3)
 
-        #trend ,계절성변수
-        daily_avg = (
-        df.copy()
-          .assign(date=lambda x: x['tm'].dt.date)
-          .groupby('date')['heat_demand']
-          .mean()
-        )
+        # #trend ,계절성변수     
+        df_copy = df.copy()
+        df_with_date = df_copy.assign(date=lambda x: x['tm'].dt.date)
+        daily_avg = df_with_date.groupby('date')['ta'].mean()
 
         # STL 분해
-        result = sm.tsa.seasonal_decompose(daily_avg, model='additive', period=365)
-        df['trend'] = result.trend
-        df['seasonal'] =result.seasonal
-        df['residual'] = result.resid
+        if len(daily_avg) >= 14:  # 최소 2주 데이터가 있는지 확인
+            result = sm.tsa.seasonal_decompose(daily_avg, model='additive', period=365)
+            df['trend'] = result.trend
+            df['seasonal'] = result.seasonal
+            df['residual'] = result.resid
+        else:
+            print(f"경고: STL 분해를 위한 충분한 데이터가 없습니다. (필요: 14일 이상, 현재: {len(daily_avg)}일)")
+            df['trend'] = 0
+            df['seasonal'] = 0
+            df['residual'] = 0
         
         return df
     
@@ -294,6 +327,11 @@ class DataPreprocessor:
     
     def _scale_numerical(self, df: pd.DataFrame, is_training: bool = True) -> pd.DataFrame:
         """수치형 변수 스케일링 (타겟 및 불필요한 컬럼 제외)"""
+        # 데이터 검증
+        if df.empty:
+            self.logger.warning("입력 데이터프레임이 비어있습니다. 스케일링을 건너뜁니다.")
+            return df
+            
         # 전체 수치형 변수 추출
         numerical_cols = df.select_dtypes(include=[np.number]).columns
 
@@ -301,14 +339,26 @@ class DataPreprocessor:
         exclude_cols = ['id', 'cluster_id', 'heat_demand', 'log_heat_demand']
         scale_cols = [col for col in numerical_cols if col not in exclude_cols]
 
+        # 스케일링할 컬럼이 있는지 확인
+        if not scale_cols:
+            self.logger.warning("스케일링할 수치형 컬럼이 없습니다.")
+            return df
+
         if is_training:
             scaler = StandardScaler()
             df[scale_cols] = scaler.fit_transform(df[scale_cols])
             self.scalers['numerical'] = scaler
+            # 학습 시 사용된 특성 이름 저장
+            self.feature_names = list(scale_cols)
         else:
             if 'numerical' in self.scalers:
                 scaler = self.scalers['numerical']
-                df[scale_cols] = scaler.transform(df[scale_cols])
+                # 테스트 시에는 학습 시 사용된 특성만 사용
+                available_cols = [col for col in self.feature_names if col in df.columns]
+                if available_cols:
+                    df[available_cols] = scaler.transform(df[available_cols])
+                else:
+                    self.logger.warning("스케일링할 수 있는 특성이 없습니다.")
         return df
 
     def _add_time_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -333,7 +383,7 @@ class DataPreprocessor:
         df_copy = df_copy.set_index('tm')              # tm을 인덱스로 설정
 
         # 일 평균 시계열 (STL용)
-        daily_avg = df_copy['heat_demand'].resample('D').mean()
+        daily_avg = df_copy['ta'].resample('D').mean()
 
         # 시각 단위 원본도 저장 (tm 칼럼 복구)
         df_copy = df_copy.reset_index()  # tm을 다시 칼럼으로
@@ -432,6 +482,8 @@ class DataPreprocessor:
         # 풍향 -9.9 값을 NaN으로 변경
         df['wd'] = df['wd'].replace(-9.9, np.nan)
 
+        return df
+
         
     def _compute_null_streaks(self, df : pd.DataFrame, column_name) -> pd.DataFrame:
         """
@@ -461,21 +513,25 @@ class DataPreprocessor:
             summary['feature'] = column_name
             summary['duration_days'] = (summary['end_time'] - summary['start_time']).dt.days + 1
             summary = summary[summary['length'] > 24]  # 장기 결측만
+            if not summary.empty:  # 빈 DataFrame이 아닌 경우에만 추가
+                result.append(summary)
 
-            result.append(summary)
-
-        return pd.concat(result, ignore_index=True)
-    
-    
-    def _fill_long_term_missing_with_cluster_avg(self, df: pd.DataFrame, summary_df, variable)-> pd.DataFrame:
+        # result가 비어있지 않은 경우에만 concat 실행
+        if result:
+            return pd.concat(result, ignore_index=True)
+        else:
+            # 빈 DataFrame 반환 (동일한 컬럼 구조 유지)
+            return pd.DataFrame(columns=['group', 'length', 'start_time', 'end_time', 'branch_id', 'feature', 'duration_days'])
+        
+    def _fill_long_term_missing_with_cluster_avg(self, df: pd.DataFrame, summary_df: pd.DataFrame, variable) -> pd.DataFrame:
         '''장시간 결측 채우기'''
+
         for idx, row in summary_df.iterrows():
             branch = row['branch_id']
             start_time = row['start_time']
             end_time = row['end_time']
 
             print(f"[{idx+1}/{len(summary_df)}] 처리 중: branch = {branch}, 기간 = {start_time} ~ {end_time}")
-
 
             # 결측 구간에 해당하는 tm 범위
             mask_time = (df['tm'] >= start_time) & (df['tm'] <= end_time)
@@ -484,7 +540,6 @@ class DataPreprocessor:
             mask_missing = mask_time & (df['branch_id'] == branch) & (df[variable].isnull())
             
             # 같은 시간대, 같은 클러스터에서 결측이 아닌 값들의 평균 구하기
-            # 동일 시간대, 같은 변수, null 아닌 값만 필터링, branch는 결측 branch 제외
             avg_values = []
             for t in df.loc[mask_time, 'tm'].unique():
                 mask_same_time = (df['tm'] == t) & (df[variable].notnull()) & (df['branch_id'] != branch)
@@ -501,20 +556,20 @@ class DataPreprocessor:
         return df
     
     
-    def _apply_mice(self, df, vars_to_impute)-> pd.DataFrame:
-        '''단시간결측, mice방법론'''
+    def _apply_mice(self, df, vars_to_impute):
+
         imputer = IterativeImputer(random_state=42)
-        
-        # imputer는 수치형 데이터만 다루므로, 수치형 컬럼만 선택
+
         df_impute = df[vars_to_impute]
         
-        # fit_transform 후 결과는 numpy array
         imputed_array = imputer.fit_transform(df_impute)
-        
-        # 다시 DataFrame으로 변환
+
         df_imputed = df.copy()
-        df_imputed[vars_to_impute] = imputed_array
-        
+
+        # 보간된 컬럼명 뒤에 '_imputed' 붙여서 새 컬럼 생성
+        for i, col in enumerate(vars_to_impute):
+            df_imputed[col] = imputed_array[:, i]
+
         return df_imputed
     
     def _categorize_wind_direction(self, degree):
@@ -580,12 +635,11 @@ class DataPreprocessor:
                 print(f"❌ {col} 컬럼 없음")
         return df
 
-        
+    
     def _fill_si_by_pattern(self, df: pd.DataFrame, branches: set, patterns: list):
         '''해당 패턴일 때 & si변수가 null값이면 0으로 만드는 함수'''
-        df = df.copy()
-
         # 날짜+시간 추출
+
         df['month'] = df['tm'].dt.month
         df['day'] = df['tm'].dt.day
         df['hour'] = df['tm'].dt.hour
@@ -620,4 +674,4 @@ class DataPreprocessor:
         df.loc[df['branch_id'].isin(branches) & df['si'].isna() & mask, 'si'] = 0
 
         # 정리
-        return df.drop(['month', 'day', 'hour'], axis=1)
+        return df
