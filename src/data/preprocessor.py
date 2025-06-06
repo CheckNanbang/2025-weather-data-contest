@@ -156,6 +156,14 @@ class DataPreprocessor:
             self.logger.info("🔨 풍속")
             df['ws_group'] = df['ws'].apply(self._categorize_ws)
 
+            # 풍향 sin, cos 변환
+            df['wd_rad'] = np.deg2rad(df['wd'])  # 도 → 라디안 변환
+            df['wd_sin'] = np.sin(df['wd_rad'])
+            df['wd_cos'] = np.cos(df['wd_rad'])
+
+            # 한파 변수 (최저기온 <= -12도)
+            df = self._create_coldwave_tropicalnight(df)
+
             #이슬점
             self.logger.info("🔨 이슬점 계산")
             df['dew_point'] = df.apply(lambda row: self._dew_point(row['ta'], row['hm']), axis=1)
@@ -171,12 +179,12 @@ class DataPreprocessor:
             # daily_avg = (
             # df.copy()
             # .assign(date=lambda x: x['tm'].dt.date)
-            # .groupby('date')['heat_demand']
+            # .groupby('date')['ta']
             # .mean()
             # )
 
             # # STL 분해
-            # result = sm.tsa.seasonal_decompose(daily_avg, model='additive', period=365)
+            # result = sm.tsa.seasonal_decompose(daily_avg, model='additive', period=30)
             # df['trend'] = result.trend
             # df['seasonal'] =result.seasonal
             # df['residual'] = result.resid
@@ -331,4 +339,36 @@ class DataPreprocessor:
                 print(f"✅ {col} 이동평균 계산 완료")
             else:
                 print(f"❌ {col} 컬럼 없음")
+        return df
+    
+    
+    def _create_coldwave_tropicalnight(self, df):
+        # 날짜, 시간 정보가 없으면 생성
+        if 'date' not in df.columns:
+            df['date'] = pd.to_datetime(df['tm']).dt.date
+        if 'hour' not in df.columns:
+            df['hour'] = pd.to_datetime(df['tm']).dt.hour
+
+        # 1) 전체 24시간 최저기온 (한파 판단용)
+        daily_min_temp = df.groupby('date')['ta'].min().reset_index(name='min_temp')
+
+        # 2) 밤 시간(18~23, 0~6시) 필터링
+        df['is_night'] = df['hour'].apply(lambda x: 1 if (x >= 18 or x <= 6) else 0)
+
+        # 밤 시간 데이터만 추출
+        night_df = df[df['is_night'] == 1]
+
+        # 밤 시간대 최저기온 (열대야 판단용)
+        night_min_temp = night_df.groupby('date')['ta'].min().reset_index(name='night_min_temp')
+
+        # 3) 두 데이터 합치기
+        result = pd.merge(daily_min_temp, night_min_temp, on='date', how='left')
+
+        # 4) 한파, 열대야 변수 생성
+        result['cold_wave'] = result['min_temp'].apply(lambda x: 1 if x <= -12 else 0)
+        result['tropical_night'] = result['night_min_temp'].apply(lambda x: 1 if x >= 25 else 0)
+
+        # 5) 원본 df에 일별 한파/열대야 칼럼 붙이기 (date 기준 병합)
+        df = df.merge(result[['date', 'cold_wave', 'tropical_night']], on='date', how='left')
+
         return df
