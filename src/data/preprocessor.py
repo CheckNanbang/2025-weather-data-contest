@@ -175,19 +175,19 @@ class DataPreprocessor:
             target_cols = ['wd', 'ws', 'rn_hr1', 'rn_day']
             df = self._add_moving_averages(df, target_cols, window_size=3)
             
-            # #trend ,계절성변수
-            # daily_avg = (
-            # df.copy()
-            # .assign(date=lambda x: x['tm'].dt.date)
-            # .groupby('date')['ta']
-            # .mean()
-            # )
+            #trend ,계절성변수
+            daily_avg = (
+            df.copy()
+            .assign(date=lambda x: x['tm'].dt.date)
+            .groupby('date')['ta']
+            .mean()
+            )
 
-            # # STL 분해
-            # result = sm.tsa.seasonal_decompose(daily_avg, model='additive', period=30)
-            # df['trend'] = result.trend
-            # df['seasonal'] =result.seasonal
-            # df['residual'] = result.resid
+            # STL 분해
+            result = sm.tsa.seasonal_decompose(daily_avg, model='additive', period=30)
+            df['trend'] = result.trend
+            df['seasonal'] =result.seasonal
+            df['residual'] = result.resid
             
         return df
 
@@ -246,18 +246,14 @@ class DataPreprocessor:
 
         df_copy = df_copy.reset_index()  # tm을 다시 칼럼으로
 
-        # STL 분해
-        # period = 30  # 월간 계절성 가정
-
-        # result = sm.tsa.seasonal_decompose(daily_avg, model='additive', period=period)
-
-        # # STL 분해 후: NaN 포함된 resid
-        # resid = result.resid
-
-        # # 선형 보간 + 앞뒤 결측 보완
-        # resid_filled = resid.interpolate(method='time').ffill().bfill()  # 시간기반 보간 + 앞뒤 결측 처리
-
-        # df = self._process_fft_filtering(resid_filled, df)
+        #STL 분해
+        period = 30  # 월간 계절성 가정
+        result = sm.tsa.seasonal_decompose(daily_avg, model='additive', period=period)
+        # STL 분해 후: NaN 포함된 resid
+        resid = result.resid
+        # 선형 보간 + 앞뒤 결측 보완
+        resid_filled = resid.interpolate(method='time').ffill().bfill()  # 시간기반 보간 + 앞뒤 결측 처리
+        df = self._process_fft_filtering(resid_filled, df)
 
         """시계열 특성 추가"""
         # 시간 기반 순환 특성 (sin, cos 변환)
@@ -372,3 +368,5 @@ class DataPreprocessor:
         df = df.merge(result[['date', 'cold_wave', 'tropical_night']], on='date', how='left')
 
         return df
+
+    

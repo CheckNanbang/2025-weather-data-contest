@@ -17,14 +17,14 @@ class DataLoader:
         dataset_name = self.config.data.dataset_name
         
         if dataset_name == "heat":
-            train_file = os.path.join(data_path, "train_heat.csv")
+            train_file = os.path.join(data_path, "non_null_train_data.csv")
             test_file = os.path.join(data_path, "test_heat.csv")
             submission_file = os.path.join(data_path, "sample_submission.csv")
             
             train_df = pd.read_csv(train_file, index_col=0)
             test_df = pd.read_csv(test_file, index_col=0)
-            train_df.columns = train_df.columns.str.replace("train_heat.", "", regex=False)
-            test_df.columns = test_df.columns.str.replace("train_heat.", "", regex=False)
+            train_df.columns = train_df.columns.str.replace("non_null_train_data.", "", regex=False)
+            test_df.columns = test_df.columns.str.replace("non_null_train_data.", "", regex=False)
             submission_df = pd.read_csv(submission_file)
             
             self.logger.info(f"데이터 로드 완료: 학습 {train_df.shape}, 테스트 {test_df.shape}")
