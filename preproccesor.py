@@ -607,6 +607,7 @@ class WeatherDataPreprocessor:
 
         # 삼중 상호작용항: 여름 & K/E/J/C/D/P/R/S & 불쾌지수
         df['DI_interaction'] = df['DI'] * df['is_key_branch'] * df['is_summer']
+        df.drop(['DI','is_summer','is_key_branch'],axis=1,replace=True)
         return df
                 
                 
@@ -676,7 +677,7 @@ class WeatherDataPreprocessor:
             cluster_df['heat_demand_log'] = np.log1p(cluster_df['heat_demand']) if 'heat_demand' in cluster_df.columns else None
             
             # 14. 불필요한 컬럼 제거
-            drop_cols = ['season', 'wd', 'quarter', 'day_of_week', 'date','DI','is_summer','is_key_branch']
+            drop_cols = ['season', 'wd', 'quarter', 'day_of_week', 'date']
             existing_drop_cols = [col for col in drop_cols if col in cluster_df.columns]
             if existing_drop_cols:
                 cluster_df = cluster_df.drop(columns=existing_drop_cols)
