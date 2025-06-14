@@ -675,14 +675,14 @@ class WeatherDataPreprocessor:
             # 13. 로그 변환
             cluster_df['heat_demand_log'] = np.log1p(cluster_df['heat_demand']) if 'heat_demand' in cluster_df.columns else None
             
-            processed_clusters[cluster_name] = cluster_df
-            
             # 14. 불필요한 컬럼 제거
             drop_cols = ['season', 'wd', 'quarter', 'day_of_week', 'date','DI','is_summer','is_key_branch']
             existing_drop_cols = [col for col in drop_cols if col in cluster_df.columns]
             if existing_drop_cols:
                 cluster_df = cluster_df.drop(columns=existing_drop_cols)
-        
+
+            processed_clusters[cluster_name] = cluster_df
+            
         print("클러스터별 데이터 전처리 완료!")
         return processed_clusters
             
