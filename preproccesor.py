@@ -663,7 +663,7 @@ class WeatherDataPreprocessor:
             cluster_df = self.create_cumulative_si(cluster_df)
             
             # 10. 불필요한 컬럼 제거
-            drop_cols = ['season', 'wd', 'quarter', 'day_of_week']
+            drop_cols = ['season', 'wd', 'quarter', 'day_of_week', 'date']
             existing_drop_cols = [col for col in drop_cols if col in cluster_df.columns]
             if existing_drop_cols:
                 cluster_df = cluster_df.drop(columns=existing_drop_cols)
