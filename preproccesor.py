@@ -565,32 +565,34 @@ class WeatherDataPreprocessor:
         result_list = []
         
         for branch_id, group in df.groupby('branch_id'):
+            group = group.reset_index(drop=True)  # 인덱스 리셋 추가
             if 'ta' in group.columns and len(group) >= 48:
                 try:
-                    series = group.set_index('tm')['ta']  # 시간 인덱스 설정
+                    # 시간 순서로 정렬 후 STL 적용
+                    group = group.sort_values('tm').reset_index(drop=True)
+                    series = group['ta']  # 인덱스 설정 제거
                     stl = STL(series, period=24).fit()
                     
-                    group = group.copy()
-                    group['trend'] = stl.trend.values
-                    group['seasonal'] = stl.seasonal.values
-                    group['residual'] = stl.resid.values
+                    group['trend'] = stl.trend
+                    group['seasonal'] = stl.seasonal  
+                    group['residual'] = stl.resid
                     
                 except Exception as e:
                     print(f"STL decomposition failed for branch {branch_id}: {e}")
-                    # STL 실패시 기본값으로 채움
                     group['trend'] = group['ta']
                     group['seasonal'] = 0
                     group['residual'] = 0
             else:
-                # 데이터 부족시 기본값
                 group['trend'] = group['ta'] if 'ta' in group.columns else 0
                 group['seasonal'] = 0
                 group['residual'] = 0
                 
             result_list.append(group)
         
-        return pd.concat(result_list).sort_values(['branch_id', 'tm']).reset_index(drop=True)
-                
+        return pd.concat(result_list, ignore_index=True).sort_values(['branch_id', 'tm']).reset_index(drop=True)
+    
+    
+    
     def create_di_features(self, df):
         """불쾌지수"""
         # 여름 여부 (boolean으로 만들기)
@@ -600,14 +602,14 @@ class WeatherDataPreprocessor:
             46.3
         )
 
-        df['is_summer'] = (df['season_group'] == 'Summer').astype(int)
+        df['is_summer'] = (df['season_group'] == 'summer').astype(int)
 
         # 주요 지점 여부
         df['is_key_branch'] = df['branch_id'].apply(lambda x: 1 if x in ['K','E','J','C','D','P','R','S'] else 0)
 
         # 삼중 상호작용항: 여름 & K/E/J/C/D/P/R/S & 불쾌지수
         df['DI_interaction'] = df['DI'] * df['is_key_branch'] * df['is_summer']
-        df.drop(['DI','is_summer','is_key_branch'],axis=1,replace=True)
+        df = df.drop(['DI','is_summer','is_key_branch'], axis=1)
         return df
                 
                 
