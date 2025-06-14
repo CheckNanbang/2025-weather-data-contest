@@ -667,7 +667,7 @@ class WeatherDataPreprocessor:
             
             # 11. STL 분해
             if 'ta' in cluster_df.columns:
-                self.create_stl_decomposition(cluster_df)
+                cluster_df = self.create_stl_decomposition(cluster_df)
             
             # 12. 불쾌지수 특성 생성
             cluster_df = self.create_di_features(cluster_df)
