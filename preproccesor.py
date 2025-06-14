@@ -217,8 +217,8 @@ class WeatherDataPreprocessor:
             df['wd'] = df['wd'].replace(-9.9, np.nan)
         
         # 타겟 변수 heat_demand에 결측이 있는 행 제거
-        if is_test is False and 'heat_demand' in df.columns:
-            df = df.dropna(subset=['heat_demand']).reset_index(drop=True)
+        
+        df = df.dropna(subset=['heat_demand']).reset_index(drop=True)
         
         return df
 
@@ -283,17 +283,17 @@ class WeatherDataPreprocessor:
                 non_summer_group = group[~summer_mask].copy()
 
                 if 'summer' in self.cluster_lag_config[cluster] and not summer_group.empty:
-                    summer_processed = self._process_group(summer_group, self.cluster_lag_config[cluster]['summer'])
+                    summer_processed = self._process_group_with_padding(summer_group, self.cluster_lag_config[cluster]['summer'])
                     cluster_dfs.setdefault('cluster2_summer', []).append(summer_processed)
 
                 if 'non_summer' in self.cluster_lag_config[cluster] and not non_summer_group.empty:
-                    non_summer_processed = self._process_group(non_summer_group, self.cluster_lag_config[cluster]['non_summer'])
+                    non_summer_processed = self._process_group_with_padding(non_summer_group, self.cluster_lag_config[cluster]['non_summer'])
                     cluster_dfs.setdefault('cluster2_non_summer', []).append(non_summer_processed)
             else:
-                processed = self._process_group(group, self.cluster_lag_config[cluster])
+                processed = self._process_group_with_padding(group, self.cluster_lag_config[cluster])
                 cluster_dfs.setdefault(f'cluster{cluster}', []).append(processed)
 
-        # 최종 데이터프레임 생성 - 수정된 부분
+        # 최종 데이터프레임 생성
         result = {}
         for cluster_name, parts in cluster_dfs.items():
             if parts:
@@ -303,36 +303,64 @@ class WeatherDataPreprocessor:
                 # 2. 정렬
                 combined = combined.sort_values(['branch_id', 'tm']).reset_index(drop=True)
                 
-                # 3. 중복 제거 (tm + branch_id 기준)
-                combined = combined.drop_duplicates(
-                    subset=['tm', 'branch_id'],
-                    keep='first'
-                ).reset_index(drop=True)
+                # 혹시 다른 이유로 생긴 NaN만 처리
+                if combined.isnull().sum().sum() > 0:
+                    print(f"Warning: {cluster_name}에서 예상치 못한 NaN 발견, forward fill 적용")
+                    combined = combined.fillna(method='ffill').fillna(method='bfill')
                 
-                # 4. NaN이 있는 행 제거
-                result[cluster_name] = combined.dropna().reset_index(drop=True)
+                result[cluster_name] = combined
 
         return result
 
-    def _process_group(self, df, config):
-        """그룹별 lag 처리"""
-        lagged = [df]
+    def _process_group_with_padding(self, df, config):
+        """그룹별 lag 처리 - 패딩을 사용하여 데이터 손실 방지"""
+        if len(df) == 0:
+            return df
+        
+        # 시간 순서로 정렬
+        df_sorted = df.sort_values('tm').reset_index(drop=True)
+        
+        # 최대 lag 값 찾기
+        max_lag = 0
         for base_col, lags in config.items():
-            if base_col in df.columns:  # 컬럼이 존재하는 경우만 처리
+            if base_col in df_sorted.columns:
+                max_lag = max(max_lag, max(lags))
+        
+        if max_lag == 0:
+            return df_sorted
+        
+        # 1. 처음 max_lag 시간만큼의 데이터를 복사해서 앞에 붙이기
+        padding_hours = min(max_lag, len(df_sorted))  # 데이터가 max_lag보다 적을 경우 대비
+        padding_data = df_sorted.head(padding_hours).copy()
+        
+        # 패딩 데이터의 시간을 조정 (겹치지 않도록)
+        if 'tm' in padding_data.columns:
+            time_diff = pd.Timedelta(hours=1)
+            for i in range(len(padding_data)):
+                padding_data.iloc[i, padding_data.columns.get_loc('tm')] = (
+                    df_sorted.iloc[0]['tm'] - time_diff * (padding_hours - i)
+                )
+        
+        # 2. 패딩 데이터와 원본 데이터 결합
+        extended_df = pd.concat([padding_data, df_sorted], ignore_index=True)
+        
+        # 3. lag 변수 생성
+        lagged_dfs = [extended_df]
+        for base_col, lags in config.items():
+            if base_col in extended_df.columns:
                 for lag in lags:
                     new_col = f"{base_col}_lag{lag}"
-                    lagged_df = df[[base_col]].shift(lag).rename(columns={base_col: new_col})
-                    lagged.append(lagged_df)
-        return pd.concat(lagged, axis=1)
+                    lagged_df = extended_df[[base_col]].shift(lag).rename(columns={base_col: new_col})
+                    lagged_dfs.append(lagged_df)
+        
+        # 4. 모든 lag 변수 결합
+        result = pd.concat(lagged_dfs, axis=1)
+        
+        # 5. 패딩했던 부분 제거 (원래 데이터 길이로 복원)
+        final_result = result.iloc[padding_hours:].reset_index(drop=True)
+        
+        return final_result
 
-    def _handle_nan(self, df, parts):
-        """NaN 처리"""
-        if len(parts) > 0 and len(parts[0]) > 24:
-            # 각 부분의 첫 24시간 데이터 캐싱
-            cached_parts = [part.head(24) for part in parts]
-            cached_data = pd.concat(cached_parts)
-            return pd.concat([cached_data, df]).sort_index().iloc[:-24]
-        return df
 
     def data_clipping(self, df):
         """데이터 범위 제한"""
