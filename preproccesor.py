@@ -266,6 +266,31 @@ class WeatherDataPreprocessor:
                 df.loc[mask, 'si'] = 0
         
         return df
+    
+    def create_stl_decomposition_single_group(self, group):
+        """단일 그룹에 대한 STL 분해"""
+        group = group.copy()
+        if len(group) >= 72:  # 최소 3일 데이터
+            try:
+                group = group.sort_values('tm').reset_index(drop=True)
+                series = group['ta']
+                stl = STL(series, period=24).fit()
+                
+                group['trend'] = stl.trend
+                group['seasonal'] = stl.seasonal  
+                group['residual'] = stl.resid
+                
+            except Exception as e:
+                print(f"STL decomposition failed: {e}")
+                group['trend'] = group['ta']
+                group['seasonal'] = 0
+                group['residual'] = 0
+        else:
+            group['trend'] = group['ta']
+            group['seasonal'] = 0
+            group['residual'] = 0
+            
+        return group
 
     def add_cluster_lags(self, df):
         """클러스터별 lag 변수 추가"""
@@ -276,8 +301,12 @@ class WeatherDataPreprocessor:
             if cluster not in self.cluster_lag_config:
                 continue
 
-            # 클러스터 2 여부 확인 (기존 코드 유지)
             if cluster == 2:
+                # cluster2는 STL 분해를 먼저 수행
+                if 'ta' in group.columns and len(group) >= 72:
+                    group = self.create_stl_decomposition_single_group(group)
+                
+                # STL 분해 후 여름/비여름 분할
                 summer_mask = group['month'].between(6, 9)
                 summer_group = group[summer_mask].copy()
                 non_summer_group = group[~summer_mask].copy()
@@ -290,8 +319,10 @@ class WeatherDataPreprocessor:
                     non_summer_processed = self._process_group_with_padding(non_summer_group, self.cluster_lag_config[cluster]['non_summer'])
                     cluster_dfs.setdefault('cluster2_non_summer', []).append(non_summer_processed)
             else:
+                # 다른 클러스터는 기존 방식
                 processed = self._process_group_with_padding(group, self.cluster_lag_config[cluster])
                 cluster_dfs.setdefault(f'cluster{cluster}', []).append(processed)
+
 
         # 최종 데이터프레임 생성
         result = {}
@@ -697,7 +728,7 @@ class WeatherDataPreprocessor:
             cluster_df = self.create_dew_point(cluster_df)
             
             # 11. STL 분해
-            if 'ta' in cluster_df.columns:
+            if 'ta' in cluster_df.columns and not cluster_name.startswith('cluster2'):
                 cluster_df = self.create_stl_decomposition(cluster_df)
             
             # 12. 불쾌지수 특성 생성
