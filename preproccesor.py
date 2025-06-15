@@ -31,9 +31,23 @@ class WeatherDataPreprocessor:
         # 클러스터별 lag 설정
         self.cluster_lag_config = {
             0: {
-                'ta': list(range(1, 4)),
-                'hm': [1, 2],
-                'rn_day': [10, 11],
+                'ta': list(range(1, 14)) + list(range(18, 28)),
+                'wd': list(range(3, 19)) + [28],
+                'ws': list(range(1, 30)),
+                'rn_day': list(range(9, 10)) + list(range(21, 30)),
+                'rn_hr1' : list(range(3, 6))+ [18, 19, 21, 29, 30],
+                'hm': [1,2,3,4] + list(range(6, 20)) +list(range(24, 30)) ,
+                'si': list(range(1, 7)) + list(range(9, 20)) + list(range(23, 30)),
+                'ta_chi': list(range(1, 22)) + list(range(27, 30)),
+		        'year' : list(range(1, 30)) ,
+		        'quatter' : list(range(2, 23)) + list(range(26, 30)),
+                'month' : list(range(22,25)), 
+                'day': [1,2,3,4, 7,8,9] + list(range(11, 23)),
+                'day_of_week': list(range(1, 18)) + list(range(23, 28)),
+		        'weekofyer' : list(range(1, 4)),
+                'wd_rad': list(range(3, 19)) + [28],
+                'wd_sin': [1,2] + list(range(8,25)),
+                'wd_cos': list(range(2, 20)) + list(range(23, 30)),
             },
             1: {
                 'ta': [1, 2, 3],
