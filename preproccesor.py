@@ -307,17 +307,17 @@ class WeatherDataPreprocessor:
                 
                 group['trend'] = stl.trend
                 group['seasonal'] = stl.seasonal  
-                group['residual'] = stl.resid
+                # group['residual'] = stl.resid
                 
             except Exception as e:
                 print(f"STL decomposition failed: {e}")
                 group['trend'] = group['ta']
                 group['seasonal'] = 0
-                group['residual'] = 0
+                # group['residual'] = 0
         else:
             group['trend'] = group['ta']
             group['seasonal'] = 0
-            group['residual'] = 0
+            # group['residual'] = 0
             
         return group
 
@@ -663,17 +663,17 @@ class WeatherDataPreprocessor:
                     
                     group['trend'] = stl.trend
                     group['seasonal'] = stl.seasonal  
-                    group['residual'] = stl.resid
+                    # group['residual'] = stl.resid
                     
                 except Exception as e:
                     print(f"STL decomposition failed for branch {branch_id}: {e}")
                     group['trend'] = group['ta']
                     group['seasonal'] = 0
-                    group['residual'] = 0
+                    # group['residual'] = 0
             else:
                 group['trend'] = group['ta'] if 'ta' in group.columns else 0
                 group['seasonal'] = 0
-                group['residual'] = 0
+                # group['residual'] = 0
                 
             result_list.append(group)
         
@@ -752,6 +752,7 @@ class WeatherDataPreprocessor:
             cluster_df = self.create_season_group(cluster_df)
             cluster_df = self.create_ta_zone(cluster_df)
             cluster_df = self.create_cumulative_si(cluster_df)
+            cluster_df = self.create_lag_rolling_features(cluster_df)
             
             # 10. 이슬점 특성 생성
             cluster_df = self.create_dew_point(cluster_df)
