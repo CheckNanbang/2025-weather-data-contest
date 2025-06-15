@@ -733,7 +733,10 @@ class WeatherDataPreprocessor:
                 df[na_columns] = df[na_columns].fillna(method='ffill')
                 df[na_columns] = df[na_columns].fillna(0)
         
-        # 8. lag/rolling 변수 생성         
+        # 8. 풍향 변수 
+        df = self.create_wind_features(df)
+
+        # 9. lag/rolling 변수 생성         
         # 클러스터별 lag 생성 - 딕셔너리 반환
         cluster_results = self.add_cluster_lags(df)
         
@@ -742,12 +745,11 @@ class WeatherDataPreprocessor:
         for cluster_name, cluster_df in cluster_results.items():
             print(f"{cluster_name} 전처리 중...")
             
-            # 9-13. 특성 생성
+            # 10-13. 특성 생성
             cluster_df = self.create_rain_intensity(cluster_df)
             cluster_df = self.create_temperature_flags(cluster_df)
             cluster_df = self.create_time_features(cluster_df)
             cluster_df = self.create_temperature_features(cluster_df)
-            cluster_df = self.create_wind_features(cluster_df)
             cluster_df = self.create_day_flag(cluster_df)
             cluster_df = self.create_season_group(cluster_df)
             cluster_df = self.create_ta_zone(cluster_df)
