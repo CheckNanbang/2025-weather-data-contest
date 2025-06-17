@@ -331,8 +331,8 @@ class WeatherDataPreprocessor:
 
             if cluster == 2:
                 # cluster2는 STL 분해를 먼저 수행
-                if 'ta' in group.columns and len(group) >= 72:
-                    group = self.create_stl_decomposition_single_group(group)
+                # if 'ta' in group.columns and len(group) >= 72:
+                #     group = self.create_stl_decomposition_single_group(group)
                 
                 # STL 분해 후 여름/비여름 분할
                 summer_mask = group['month'].between(6, 9)
@@ -759,8 +759,8 @@ class WeatherDataPreprocessor:
             cluster_df = self.create_dew_point(cluster_df)
             
             # 11. STL 분해
-            if 'ta' in cluster_df.columns and not cluster_name.startswith('cluster2'):
-                cluster_df = self.create_stl_decomposition(cluster_df)
+            # if 'ta' in cluster_df.columns and not cluster_name.startswith('cluster2'):
+            #     cluster_df = self.create_stl_decomposition(cluster_df)
             
             # 12. 불쾌지수 특성 생성
             cluster_df = self.create_di_features(cluster_df)
