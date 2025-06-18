@@ -657,8 +657,9 @@ class WeatherDataPreprocessor:
 
     def dew_point(self, temp, humidity):
         """이슬점 계산"""
-        if pd.isna(temp) or pd.isna(humidity) or humidity <= 0:
+        if pd.isna(temp) or pd.isna(humidity):
             return np.nan
+        humidity = np.clip(humidity, 1, 100)
         a, b = 17.27, 237.7
         alpha = ((a * temp) / (b + temp)) + np.log(humidity / 100)
         return (b * alpha) / (a - alpha)
