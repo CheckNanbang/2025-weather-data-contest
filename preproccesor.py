@@ -431,8 +431,8 @@ class WeatherDataPreprocessor:
         # 풍향 범위는 0~360도
         if 'wd' in df.columns:
             df['wd'] = df['wd'] % 360
-        # 일사량, 풍속, 강수량 등은 0 이상만 허용
-        for col in ['si', 'ws', 'rn_day', 'rn_hr1']:
+        # 일사량, 풍속, 강수량, 습도 등은 0 이상만 허용
+        for col in ['si', 'ws', 'rn_day', 'rn_hr1', 'hm']:
             if col in df.columns:
                 df[col] = df[col].clip(lower=0)
         return df
