@@ -70,7 +70,7 @@ class WeatherDataPreprocessor:
                 'hour': [13,21,25],
                 'day_of_week': list(range(1, 14)) + list(range(23, 29)),
 		        'day_of_week' : list(range(1, 14))+list(range(23, 29)),
-		        'weekofyer' : list(range(1, 5)),
+		        'weekofyear' : list(range(1, 5)),
 		        'hour_group' : list(range(1, 4)) +[9],
                 'wd_rad': list(range(9,14)) +  list(range(17,19)),
                 'wd_sin': list(range(1,6)) + list(range(10,23)),
