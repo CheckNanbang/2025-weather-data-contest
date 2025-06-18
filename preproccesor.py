@@ -61,7 +61,7 @@ class WeatherDataPreprocessor:
                 'si': list(range(1, 6)) + list(range(9, 20)),
                 'ta_chi': list(range(1, 20)),
 		        'year' : list(range(1, 14)) ,
-		        'quatter' : [1,2,3] ,
+		        'quater' : [1,2,3] ,
                 'day': [7,8] + list(range(11, 16)),
                 'hour': [13,21,25],
                 'day_of_week': list(range(1, 14)) + list(range(23, 29)),
@@ -80,10 +80,10 @@ class WeatherDataPreprocessor:
                     'hm': list(range(1, 4)) + list(range(7, 25)),
                     'si': list(range(1, 5)) + list(range(18, 25)),
                     'ta_chi': [1, 2, 3, 23, 24],
-                    'year': list(range(1, 6)),
-                    'month': list(range(1, 6)),
-                    'day': list(range(1, 8)) + list(range(20, 25)),
-                    'day_of_week': list(range(1, 17)) + list(range(20, 25)),
+                    # 'year': list(range(1, 6)),
+                    # 'month': list(range(1, 6)),
+                    # 'day': list(range(1, 8)) + list(range(20, 25)),
+                    # 'day_of_week': list(range(1, 17)) + list(range(20, 25)),
                 },
                 'non_summer': {
                     'ta': list(range(1, 20)) + [22, 23, 24],
@@ -94,10 +94,10 @@ class WeatherDataPreprocessor:
                     'hm': list(range(5, 21)) + [24],
                     'si': list(range(1, 8)) + list(range(9, 22)),
                     'ta_chi': list(range(1, 25)),
-                    'month': list(range(13, 25)),
-                    'day': list(range(8, 21)),
-                    'hour': [17],
-                    'day_of_week': list(range(1, 10)) + list(range(18, 25)),
+                    # 'month': list(range(13, 25)),
+                    # 'day': list(range(8, 21)),
+                    # 'hour': [17],
+                    # 'day_of_week': list(range(1, 10)) + list(range(18, 25)),
                     'wd_rad': [1] + list(range(5, 20)),
                     'wd_sin': [1, 2] + list(range(6, 15)),
                     'wd_cos': list(range(1, 18)),
@@ -433,33 +433,53 @@ class WeatherDataPreprocessor:
                 df[col] = df[col].clip(lower=0)
         return df
 
-    def create_lag_rolling_features(self, df):
-        """lag 및 rolling 변수 생성"""
+    def create_rolling_features(self, df):
+        """rolling 변수 생성 (padding을 사용하여 NaN 방지)"""
         dfs = []
         
         for branch, group in df.groupby('branch_id'):
             df_branch = group.sort_values('tm').copy()
             
-            # lag 변수 생성
-            for col in self.lag_cols:
-                if col in df_branch.columns:
-                    for lag in self.lag_hours:
-                        new_col = f'{col}_lag{lag}'
-                        df_branch[new_col] = df_branch[col].shift(lag)
+            # 최대 rolling window 크기 찾기
+            rolling_windows = self.rolling_hours + [72, 168]  # 3일, 7일 추가
+            max_window = max(rolling_windows)
             
-            # 이동평균 변수 생성 (과거 값만 반영) - 3일과 7일 추가
+            if len(df_branch) == 0:
+                dfs.append(df_branch)
+                continue
+                
+            # 패딩 데이터 생성 (최대 window 크기만큼)
+            padding_size = min(max_window, len(df_branch))
+            padding_data = df_branch.head(padding_size).copy()
+            
+            # 패딩 데이터의 시간을 조정
+            if 'tm' in padding_data.columns:
+                time_diff = pd.Timedelta(hours=1)
+                for i in range(len(padding_data)):
+                    padding_data.iloc[i, padding_data.columns.get_loc('tm')] = (
+                        df_branch.iloc[0]['tm'] - time_diff * (padding_size - i)
+                    )
+            
+            # 패딩 데이터와 원본 데이터 결합
+            extended_df = pd.concat([padding_data, df_branch], ignore_index=True)
+            
+            # 이동평균 변수 생성
             for col in self.rolling_cols:
-                if col in df_branch.columns:
+                if col in extended_df.columns:
+                    # 기본 rolling windows (3, 24시간)
                     for window in self.rolling_hours:
                         new_col = f'{col}_roll{window}'
-                        df_branch[new_col] = df_branch[col].shift(1).rolling(window=window).mean()
+                        extended_df[new_col] = extended_df[col].shift(1).rolling(window=window).mean()
                     
-                    # 3일 이동평균 추가
-                    df_branch[f'{col}_roll72'] = df_branch[col].shift(1).rolling(window=72).mean()  # 3일 = 72시간
-                    # 7일 이동평균 추가
-                    df_branch[f'{col}_roll168'] = df_branch[col].shift(1).rolling(window=168).mean()  # 7일 = 168시간
+                    # 3일 이동평균 (72시간)
+                    extended_df[f'{col}_roll72'] = extended_df[col].shift(1).rolling(window=72).mean()
+                    
+                    # 7일 이동평균 (168시간)
+                    extended_df[f'{col}_roll168'] = extended_df[col].shift(1).rolling(window=168).mean()
             
-            dfs.append(df_branch)
+            # 패딩 부분 제거하여 원래 길이로 복원
+            final_df = extended_df.iloc[padding_size:].reset_index(drop=True)
+            dfs.append(final_df)
         
         return pd.concat(dfs, axis=0).sort_values(['branch_id', 'tm']).reset_index(drop=True)
 
@@ -753,7 +773,7 @@ class WeatherDataPreprocessor:
             cluster_df = self.create_season_group(cluster_df)
             cluster_df = self.create_ta_zone(cluster_df)
             cluster_df = self.create_cumulative_si(cluster_df)
-            cluster_df = self.create_lag_rolling_features(cluster_df)
+            cluster_df = self.create_rolling_features(cluster_df)
             
             # 10. 이슬점 특성 생성
             cluster_df = self.create_dew_point(cluster_df)
