@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-from statsmodels.tsa.seasonal import STL
 
 class WeatherDataPreprocessor:
     """날씨 데이터 전처리를 위한 클래스"""
@@ -48,14 +47,14 @@ class WeatherDataPreprocessor:
                 'wd_sin': [1,2] + list(range(8,24)),
                 'wd_cos': list(range(3, 20)) + list(range(23, 29)),
             },
-            1: {
-                'ta': [1, 3, 5, 7, 9, 11, 42, 44, 46, 48, 50],
-                'ws': [4, 6, 8, 10, 12, 14, 16],
-                'hm': [29, 31, 33, 35, 37],
-                'rn_hr1' : [1],
-                'si': [1, 3],
-                'ta_chi': [1, 3, 5, 7, 9, 11, 13, 15, 17, 41, 43, 45, 47, 49, 51],
-            },
+            # 1: {
+            #     'ta': [1, 3, 5, 7, 9, 11, 42, 44, 46, 48, 50],
+            #     'ws': [4, 6, 8, 10, 12, 14, 16],
+            #     'hm': [29, 31, 33, 35, 37],
+            #     'rn_hr1' : [1],
+            #     'si': [1, 3],
+            #     'ta_chi': [1, 3, 5, 7, 9, 11, 13, 15, 17, 41, 43, 45, 47, 49, 51],
+            # },
             3: {
                 'ta': list(range(1, 15)) + [23, 24, 25],
                 'wd': [9,10,11,13,14] + list(range(17, 20)),
@@ -105,6 +104,41 @@ class WeatherDataPreprocessor:
                     'wd_rad': [1] + list(range(5, 20)),
                     'wd_sin': [1, 2] + list(range(6, 15)),
                     'wd_cos': list(range(1, 18)),
+                }
+            },
+            1: {
+                'summer': {
+                    'ta': list(range(1, 4)) + [10],
+                    'wd': [2],
+                    'rn_day': [1],
+                    'rn_hr1': [30],
+                    'hm': list(range(1, 4)) + [11],
+                    'si': list(range(1, 5)) + list(range(8, 25)),
+                    'ta_chi': [1, 2, 3],
+                    'wd_rad': [2],
+                    'ws_sin': [1, 13, 14, 15, 16, 17],
+                    'wd_cos': [1,2,24]
+                    # 'year': list(range(1, 6)),
+                    # 'month': list(range(1, 6)),
+                    # 'day': list(range(1, 8)) + list(range(20, 25)),
+                    # 'day_of_week': list(range(1, 17)) + list(range(20, 25)),
+                },
+                'non_summer': {
+                    'ta': list(range(1, 19)),
+                    'wd': [1,2,3,4,5] + list(range(8, 24)),
+                    'ws': list(range(1, 25)),
+                    'rn_day': list(range(1,6)) + list(range(14, 18)) + list(range(21, 25)),
+                    'rn_hr1': [1, 2,5,6,17,18,19,20,21, 22, 23, 24],
+                    'hm': list(range(1, 5)) + list(range(6, 17))+ list(range(21, 25)),
+                    'si': list(range(1, 8)) + list(range(10, 20)),
+                    'ta_chi': list(range(1, 23)),
+                    # 'month': list(range(13, 25)),
+                    # 'day': list(range(8, 21)),
+                    # 'hour': [17],
+                    # 'day_of_week': list(range(1, 10)) + list(range(18, 25)),
+                    'wd_rad': list(range(1, 6)) + list(range(9, 25)),
+                    'wd_sin': list(range(1, 7)) + list(range(9, 25)),
+                    'wd_cos': list(range(1, 25)),
                 }
             }
         }
@@ -298,31 +332,6 @@ class WeatherDataPreprocessor:
                 df.loc[mask, 'si'] = 0
         
         return df
-    
-    def create_stl_decomposition_single_group(self, group):
-        """단일 그룹에 대한 STL 분해"""
-        group = group.copy()
-        if len(group) >= 72:  # 최소 3일 데이터
-            try:
-                group = group.sort_values('tm').reset_index(drop=True)
-                series = group['ta']
-                stl = STL(series, period=24).fit()
-                
-                group['trend'] = stl.trend
-                group['seasonal'] = stl.seasonal  
-                # group['residual'] = stl.resid
-                
-            except Exception as e:
-                print(f"STL decomposition failed: {e}")
-                group['trend'] = group['ta']
-                group['seasonal'] = 0
-                # group['residual'] = 0
-        else:
-            group['trend'] = group['ta']
-            group['seasonal'] = 0
-            # group['residual'] = 0
-            
-        return group
 
     def add_cluster_lags(self, df):
         """클러스터별 lag 변수 추가"""
@@ -334,11 +343,6 @@ class WeatherDataPreprocessor:
                 continue
 
             if cluster == 2:
-                # cluster2는 STL 분해를 먼저 수행
-                # if 'ta' in group.columns and len(group) >= 72:
-                #     group = self.create_stl_decomposition_single_group(group)
-                
-                # STL 분해 후 여름/비여름 분할
                 summer_mask = group['month'].between(6, 9)
                 summer_group = group[summer_mask].copy()
                 non_summer_group = group[~summer_mask].copy()
@@ -350,6 +354,19 @@ class WeatherDataPreprocessor:
                 if 'non_summer' in self.cluster_lag_config[cluster] and not non_summer_group.empty:
                     non_summer_processed = self._process_group_with_padding(non_summer_group, self.cluster_lag_config[cluster]['non_summer'])
                     cluster_dfs.setdefault('cluster2_non_summer', []).append(non_summer_processed)
+                    
+            elif cluster == 1:
+                summer_mask = group['month'].between(6, 9)
+                summer_group = group[summer_mask].copy()
+                non_summer_group = group[~summer_mask].copy()
+
+                if 'summer' in self.cluster_lag_config[cluster] and not summer_group.empty:
+                    summer_processed = self._process_group_with_padding(summer_group, self.cluster_lag_config[cluster]['summer'])
+                    cluster_dfs.setdefault('cluster1_summer', []).append(summer_processed)
+
+                if 'non_summer' in self.cluster_lag_config[cluster] and not non_summer_group.empty:
+                    non_summer_processed = self._process_group_with_padding(non_summer_group, self.cluster_lag_config[cluster]['non_summer'])
+                    cluster_dfs.setdefault('cluster1_non_summer', []).append(non_summer_processed)
             else:
                 # 다른 클러스터는 기존 방식
                 processed = self._process_group_with_padding(group, self.cluster_lag_config[cluster])
@@ -670,39 +687,6 @@ class WeatherDataPreprocessor:
         if 'ta' in df.columns and 'hm' in df.columns:
             df['dew_point'] = df.apply(lambda row: self.dew_point(row['ta'], row['hm']), axis=1)
         return df
-
-    def create_stl_decomposition(self, df):
-        """STL 분해를 통한 계절성 변수 생성"""
-        df = df.copy()
-        result_list = []
-        
-        for branch_id, group in df.groupby('branch_id'):
-            group = group.reset_index(drop=True)  # 인덱스 리셋 추가
-            if 'ta' in group.columns and len(group) >= 48:
-                try:
-                    # 시간 순서로 정렬 후 STL 적용
-                    group = group.sort_values('tm').reset_index(drop=True)
-                    series = group['ta']  # 인덱스 설정 제거
-                    stl = STL(series, period=24).fit()
-                    
-                    group['trend'] = stl.trend
-                    group['seasonal'] = stl.seasonal  
-                    # group['residual'] = stl.resid
-                    
-                except Exception as e:
-                    print(f"STL decomposition failed for branch {branch_id}: {e}")
-                    group['trend'] = group['ta']
-                    group['seasonal'] = 0
-                    # group['residual'] = 0
-            else:
-                group['trend'] = group['ta'] if 'ta' in group.columns else 0
-                group['seasonal'] = 0
-                # group['residual'] = 0
-                
-            result_list.append(group)
-        
-        return pd.concat(result_list, ignore_index=True).sort_values(['branch_id', 'tm']).reset_index(drop=True)
-    
     
     
     def create_di_features(self, df):
@@ -782,10 +766,6 @@ class WeatherDataPreprocessor:
             
             # 10. 이슬점 특성 생성
             cluster_df = self.create_dew_point(cluster_df)
-            
-            # 11. STL 분해
-            # if 'ta' in cluster_df.columns and not cluster_name.startswith('cluster2'):
-            #     cluster_df = self.create_stl_decomposition(cluster_df)
             
             # 12. 불쾌지수 특성 생성
             cluster_df = self.create_di_features(cluster_df)
