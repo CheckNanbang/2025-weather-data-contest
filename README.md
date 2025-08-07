@@ -10,7 +10,7 @@
 - **팀명**: 체크난방
 
 ## 👥 참가자
-|   |     |
+|  이름 |  Github   |
 |--------|-------------------|
 | 고도현 | [@rhehgus02](https://github.com/rhehgus02)        |
 | 서혜현 | [@hyehyunseo](https://github.com/hyehyunseo)       |
@@ -41,7 +41,7 @@
 ### 1. K-Means 클러스터링
 19개 지점을 열수요 패턴에 따라 4개 클러스터로 분류
 
-|   |   |   |
+| cluster | branch_id  | 설명  |
 |---|---|---|
 | Cluster0 | E, F, I, J, K, N, O, Q | 낮은 수준의 열수요, 여름에도 일정 수준 유지 |
 | Cluster1 | B, C, G | 매우 높은 겨울 피크, 계절에 따른 등락이 가장 뚜렷 |
