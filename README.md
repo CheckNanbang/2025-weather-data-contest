@@ -49,10 +49,10 @@
 | Cluster3 | L, M, R, S | 전반적으로 매우 낮은 수요, 여름철의 수요는 거의 없음 |
 
 <p float="left">
-  <img src="image-1.png" width="200" />
-  <img src="image.png" width="200" />
-  <img src="image-2.png" width="200" />
-  <img src="image-3.png" width="200" />
+  <img src="images/image-1.png" width="200" />
+  <img src="images/image.png" width="200" />
+  <img src="images/image-2.png" width="200" />
+  <img src="images/image-3.png" width="200" />
 </p>
 
 
@@ -75,7 +75,7 @@
 
 
 ### 3. 클러스터별 맞춤 모델링
-![alt text](image-4.png)
+![alt text](images/image-4.png)
 - **총 6개 모델 구축**: Cluster 0,3 (단일모델) + Cluster 1,2 (여름/비여름 분리모델)
 - **XGBoost 기반 예측**: 비선형 관계 학습과 과적합 방지
 - **가중치 적용**: 고수요 구간 예측 정밀도 향상을 위한 타깃 비례 가중치
