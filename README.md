@@ -28,9 +28,9 @@
 본 프로젝트는 **지역별 열수요 패턴의 다양성을 고려한 클러스터 기반 예측 모델**을 개발하여, 효율적인 에너지 관리와 열공급 시스템의 스마트화에 기여하고자 합니다.
 
 ### 🔍 주요 분석 전략
-1. **시간적·공간적 특성 반영 클러스터링**
-2. **기상 기반 파생 변수 생성**
-3. **여름/비여름 구분 클러스터별 모델링**
+1. [**시간적·공간적 특성 반영 클러스터링**](https://github.com/CheckNanbang/2025-weather-data-contest?tab=readme-ov-file#1-k-means-%ED%81%B4%EB%9F%AC%EC%8A%A4%ED%84%B0%EB%A7%81)
+2. [**기상 기반 파생 변수 생성**](https://github.com/CheckNanbang/2025-weather-data-contest?tab=readme-ov-file#2-%ED%8C%8C%EC%83%9D-%EB%B3%80%EC%88%98-%EC%97%94%EC%A7%80%EB%8B%88%EC%96%B4%EB%A7%81)
+3. [**여름/비여름 구분 클러스터별 모델링**](https://github.com/CheckNanbang/2025-weather-data-contest?tab=readme-ov-file#3-%ED%81%B4%EB%9F%AC%EC%8A%A4%ED%84%B0%EB%B3%84-%EB%A7%9E%EC%B6%A4-%EB%AA%A8%EB%8D%B8%EB%A7%81)
 
 ### 📈 데이터 구성
 - **관측치**: 499,301개
